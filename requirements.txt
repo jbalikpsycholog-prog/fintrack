@@ -6,3 +6,4 @@ sqlalchemy>=2.0.36
 aiofiles>=23.2.1
 python-dotenv>=1.0.1
 python-dateutil>=2.9.0
+chardet>=5.0.0
