@@ -1,105 +1,142 @@
 {% extends "base.html" %}
-{% block title %}Dashboard – FinTrack{% endblock %}
+
+{% block title %}Dashboard – FinTrack OSVČ{% endblock %}
+
 {% block content %}
-<div class="mb-5 flex items-center justify-between flex-wrap gap-3">
-  <div>
-    <h1 class="text-2xl font-bold text-slate-800">Dashboard</h1>
-    <p class="text-slate-500 text-sm">Prehled financi OSVC</p>
-  </div>
-  <form method="get" class="flex gap-2">
-    <select name="month" class="border rounded-lg px-3 py-2 text-sm bg-white">
-      {% for i in range(1,13) %}<option value="{{ i }}" {% if i == month %}selected{% endif %}>{{ months_cz[i-1] }}</option>{% endfor %}
-    </select>
-    <select name="year" class="border rounded-lg px-3 py-2 text-sm bg-white">
-      {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
-    </select>
-    <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Zobrazit</button>
-  </form>
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-800">Dashboard {{ current_year }}</h1>
+  <p class="text-gray-500 text-sm mt-1">Přehled hospodaření za aktuální rok</p>
 </div>
 
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-green-500">
-    <p class="text-xs text-slate-500 mb-1 uppercase tracking-wide">Prijmy</p>
-    <p class="text-2xl font-bold text-green-600">{{ "{:,.0f}".format(income_total).replace(",", " ") }} Kc</p>
+<!-- KPI karty -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+  <div class="bg-white rounded-xl shadow p-5 border-l-4 border-green-500">
+    <p class="text-xs text-gray-500 uppercase tracking-wide">Příjmy {{ current_year }}</p>
+    <p class="text-2xl font-bold text-green-600 mt-1">{{ "{:,.0f}".format(total_income) }} Kč</p>
   </div>
-  <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-red-500">
-    <p class="text-xs text-slate-500 mb-1 uppercase tracking-wide">Vydaje</p>
-    <p class="text-2xl font-bold text-red-500">{{ "{:,.0f}".format(total_expenses).replace(",", " ") }} Kc</p>
+  <div class="bg-white rounded-xl shadow p-5 border-l-4 border-red-500">
+    <p class="text-xs text-gray-500 uppercase tracking-wide">Výdaje {{ current_year }}</p>
+    <p class="text-2xl font-bold text-red-600 mt-1">{{ "{:,.0f}".format(total_expense) }} Kč</p>
   </div>
-  <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 {% if saldo >= 0 %}border-green-500{% else %}border-red-500{% endif %}">
-    <p class="text-xs text-slate-500 mb-1 uppercase tracking-wide">Saldo</p>
-    <p class="text-2xl font-bold {% if saldo >= 0 %}text-green-600{% else %}text-red-500{% endif %}">{{ "{:,.0f}".format(saldo).replace(",", " ") }} Kc</p>
+  <div class="bg-white rounded-xl shadow p-5 border-l-4 {% if saldo >= 0 %}border-blue-500{% else %}border-orange-500{% endif %}">
+    <p class="text-xs text-gray-500 uppercase tracking-wide">Saldo {{ current_year }}</p>
+    <p class="text-2xl font-bold {% if saldo >= 0 %}text-blue-600{% else %}text-orange-600{% endif %} mt-1">{{ "{:,.0f}".format(saldo) }} Kč</p>
   </div>
-  <div class="bg-white rounded-xl shadow-sm p-5 border-l-4 border-orange-500">
-    <p class="text-xs text-slate-500 mb-1 uppercase tracking-wide">Nezarazene</p>
-    <p class="text-2xl font-bold text-orange-500">{{ unclassified_count }}</p>
-    {% if unclassified_count > 0 %}<a href="/transactions?t_type=unclassified" class="text-xs text-indigo-600 hover:underline">Zaradit &rarr;</a>{% endif %}
-  </div>
-</div>
-
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-  <div class="bg-white rounded-xl shadow-sm p-5">
-    <h2 class="font-semibold text-slate-700 mb-4">Vydaje podle kategorii</h2>
-    {% if expenses_by_cat %}
-    <canvas id="pieChart" height="220"></canvas>
-    {% else %}
-    <p class="text-slate-400 text-sm text-center py-10">Zadne vydaje v tomto obdobi</p>
+  <div class="bg-white rounded-xl shadow p-5 border-l-4 border-yellow-500">
+    <p class="text-xs text-gray-500 uppercase tracking-wide">Nezařazeno</p>
+    <p class="text-2xl font-bold text-yellow-600 mt-1">{{ unclassified_count }}</p>
+    {% if unclassified_count > 0 %}
+    <a href="/transactions?show_unclassified=true" class="text-xs text-yellow-600 underline">Zařadit nyní →</a>
     {% endif %}
   </div>
-  <div class="bg-white rounded-xl shadow-sm p-5">
-    <h2 class="font-semibold text-slate-700 mb-4">Vydaje podle kategorii</h2>
-    <div class="space-y-2">
-      {% for cat in expenses_by_cat %}
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="w-3 h-3 rounded-full" style="background:{{ cat.color }}"></div>
-          <span class="text-sm text-slate-700">{{ cat.name }}</span>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+  <!-- Graf výdajů dle kategorií -->
+  <div class="bg-white rounded-xl shadow p-5">
+    <h2 class="text-lg font-semibold text-gray-700 mb-4">Výdaje dle kategorie</h2>
+    {% if category_expenses %}
+    <canvas id="catChart" height="220"></canvas>
+    {% else %}
+    <p class="text-gray-400 text-sm text-center py-8">Zatím žádná data. Importujte CSV výpis.</p>
+    {% endif %}
+  </div>
+
+  <!-- Rychlé akce -->
+  <div class="bg-white rounded-xl shadow p-5">
+    <h2 class="text-lg font-semibold text-gray-700 mb-4">Rychlé akce</h2>
+    <div class="space-y-3">
+      <a href="/import" class="flex items-center gap-3 p-3 rounded-lg bg-blue-50 hover:bg-blue-100 transition">
+        <span class="text-2xl">📥</span>
+        <div>
+          <p class="font-medium text-blue-800">Importovat CSV výpis</p>
+          <p class="text-xs text-blue-600">Nahrát nový výpis z České spořitelny</p>
         </div>
-        <span class="text-sm font-semibold text-slate-800">{{ "{:,.0f}".format(cat.total|abs).replace(",", " ") }} Kc</span>
-      </div>
-      {% endfor %}
-      {% if not expenses_by_cat %}<p class="text-slate-400 text-sm">Zadne vydaje</p>{% endif %}
+      </a>
+      <a href="/transactions?show_unclassified=true" class="flex items-center gap-3 p-3 rounded-lg bg-yellow-50 hover:bg-yellow-100 transition">
+        <span class="text-2xl">🗂️</span>
+        <div>
+          <p class="font-medium text-yellow-800">Zařadit transakce</p>
+          <p class="text-xs text-yellow-600">{{ unclassified_count }} čeká na zařazení</p>
+        </div>
+      </a>
+      <a href="/reports" class="flex items-center gap-3 p-3 rounded-lg bg-green-50 hover:bg-green-100 transition">
+        <span class="text-2xl">📊</span>
+        <div>
+          <p class="font-medium text-green-800">Zobrazit sestavy</p>
+          <p class="text-xs text-green-600">Měsíční, čtvrtletní, roční přehledy</p>
+        </div>
+      </a>
+      <a href="/budgets" class="flex items-center gap-3 p-3 rounded-lg bg-purple-50 hover:bg-purple-100 transition">
+        <span class="text-2xl">🎯</span>
+        <div>
+          <p class="font-medium text-purple-800">Plány/rozpočty</p>
+          <p class="text-xs text-purple-600">Nastavit plánované výdaje</p>
+        </div>
+      </a>
     </div>
   </div>
 </div>
 
-<div class="bg-white rounded-xl shadow-sm p-5">
-  <h2 class="font-semibold text-slate-700 mb-3">Posledni importy</h2>
-  {% if last_imports %}
+<!-- Poslední importy -->
+<div class="bg-white rounded-xl shadow p-5">
+  <h2 class="text-lg font-semibold text-gray-700 mb-4">Poslední importy</h2>
+  {% if recent_imports %}
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-400 border-b"><th class="pb-2">Soubor</th><th class="pb-2">Obdobi</th><th class="pb-2">Datum importu</th><th class="pb-2"></th></tr></thead>
+    <thead>
+      <tr class="text-left text-gray-500 border-b">
+        <th class="pb-2 font-medium">Soubor</th>
+        <th class="pb-2 font-medium">Období</th>
+        <th class="pb-2 font-medium">Transakcí</th>
+        <th class="pb-2 font-medium">Importováno</th>
+      </tr>
+    </thead>
     <tbody>
-    {% for b in last_imports %}
-    <tr class="border-b last:border-0 hover:bg-slate-50">
-      <td class="py-2">{{ b.filename }}</td>
-      <td class="py-2">{{ b.period_label }}</td>
-      <td class="py-2">{{ b.imported_at.strftime('%d.%m.%Y %H:%M') }}</td>
-      <td class="py-2"><a href="/transactions?batch_id={{ b.id }}" class="text-indigo-600 hover:underline text-xs">Zobrazit</a></td>
-    </tr>
-    {% endfor %}
+      {% for imp in recent_imports %}
+      <tr class="border-b border-gray-50 hover:bg-gray-50">
+        <td class="py-2 text-gray-700">{{ imp.filename }}</td>
+        <td class="py-2 text-gray-500">{{ imp.month }}/{{ imp.year }}</td>
+        <td class="py-2 text-gray-700">{{ imp.transaction_count }}</td>
+        <td class="py-2 text-gray-400 text-xs">{{ imp.imported_at.strftime('%d.%m.%Y %H:%M') if imp.imported_at else '' }}</td>
+      </tr>
+      {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p class="text-slate-400 text-sm">Zatim zadne importy. <a href="/import" class="text-indigo-600 hover:underline">Importovat prvni vypis &rarr;</a></p>
+  <p class="text-gray-400 text-sm text-center py-4">Zatím žádné importy. <a href="/import" class="text-blue-500 underline">Importovat první výpis →</a></p>
   {% endif %}
 </div>
-{% endblock %}
-{% block scripts %}
+
+{% if category_expenses %}
 <script>
-{% if expenses_by_cat %}
-const ctx = document.getElementById('pieChart').getContext('2d');
+const ctx = document.getElementById('catChart').getContext('2d');
 new Chart(ctx, {
   type: 'doughnut',
   data: {
-    labels: [{% for c in expenses_by_cat %}'{{ c.name }}',{% endfor %}],
+    labels: [{% for c in category_expenses %}'{{ c.name }}'{% if not loop.last %},{% endif %}{% endfor %}],
     datasets: [{
-      data: [{% for c in expenses_by_cat %}{{ c.total|abs }},{% endfor %}],
-      backgroundColor: [{% for c in expenses_by_cat %}'{{ c.color }}',{% endfor %}],
+      data: [{% for c in category_expenses %}{{ c.total }}{% if not loop.last %},{% endif %}{% endfor %}],
+      backgroundColor: [
+        '#3B82F6','#EF4444','#10B981','#F59E0B','#8B5CF6',
+        '#EC4899','#14B8A6','#F97316','#6366F1','#84CC16'
+      ],
       borderWidth: 2,
     }]
   },
-  options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'right', labels: { font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          label: function(ctx) {
+            return ctx.label + ': ' + ctx.parsed.toLocaleString('cs-CZ') + ' Kč';
+          }
+        }
+      }
+    }
+  }
 });
-{% endif %}
 </script>
+{% endif %}
 {% endblock %}
