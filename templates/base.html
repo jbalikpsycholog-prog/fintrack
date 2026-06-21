@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}FinTrack OSVC{% endblock %}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div class="flex min-h-screen">
+  <aside class="w-60 bg-slate-900 text-white flex flex-col fixed h-full z-20 shadow-xl">
+    <div class="px-5 py-4 border-b border-slate-700">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center">
+          <i class="fas fa-chart-line text-white"></i>
+        </div>
+        <div>
+          <div class="font-bold text-white">FinTrack</div>
+          <div class="text-slate-400 text-xs">OSVC evidence</div>
+        </div>
+      </div>
+    </div>
+    <nav class="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
+      <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all {% if request.url.path == '/' %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700 hover:text-white{% endif %}">
+        <i class="fas fa-gauge-high w-4 text-center"></i> Dashboard
+      </a>
+      <a href="/import" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all {% if '/import' in request.url.path %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700 hover:text-white{% endif %}">
+        <i class="fas fa-file-import w-4 text-center"></i> Import vystupu
+      </a>
+      <a href="/transactions?t_type=unclassified" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all {% if 'unclassified' in request.url.query %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700 hover:text-white{% endif %}">
+        <i class="fas fa-inbox w-4 text-center"></i>
+        <span>Nezarazene</span>
+        {% if unclassified_count > 0 %}
+        <span class="ml-auto bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{{ unclassified_count }}</span>
+        {% endif %}
+      </a>
+      <a href="/transactions" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all {% if '/transactions' in request.url.path and 'unclassified' not in request.url.query %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700 hover:text-white{% endif %}">
+        <i class="fas fa-list w-4 text-center"></i> Transakce
+      </a>
+      <a href="/reports" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all {% if '/reports' in request.url.path %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700 hover:text-white{% endif %}">
+        <i class="fas fa-chart-bar w-4 text-center"></i> Prehledy
+      </a>
+      <a href="/budgets" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all {% if '/budgets' in request.url.path %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700 hover:text-white{% endif %}">
+        <i class="fas fa-bullseye w-4 text-center"></i> Plany
+      </a>
+      <a href="/categories" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all {% if '/categories' in request.url.path %}bg-indigo-600 text-white{% else %}text-slate-300 hover:bg-slate-700 hover:text-white{% endif %}">
+        <i class="fas fa-tags w-4 text-center"></i> Kategorie
+      </a>
+    </nav>
+    <div class="px-4 py-3 border-t border-slate-700 text-xs text-slate-500">FinTrack v1.0</div>
+  </aside>
+  <main class="ml-60 flex-1 p-6 min-h-screen">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script>
+async function postForm(url, data) {
+  const fd = new FormData();
+  for (const [k,v] of Object.entries(data)) fd.append(k, String(v));
+  const r = await fetch(url, {method:'POST', body:fd});
+  return r.json();
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
