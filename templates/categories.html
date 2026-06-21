@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Kategorie – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-bold text-slate-800">Kategorie</h1>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+  <div class="bg-white rounded-xl shadow-sm p-6">
+    <h2 class="font-semibold text-slate-700 mb-4">Pridat kategorii</h2>
+    <form method="post" action="/categories/add" class="space-y-3">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Nazev</label>
+        <input type="text" name="name" required class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Barva</label>
+        <input type="color" name="color" value="#6366f1" class="h-10 w-full rounded-lg border cursor-pointer">
+      </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="is_income" value="true" class="rounded"> Kategorie prijmu
+      </label>
+      <button type="submit" class="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-medium">Pridat</button>
+    </form>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm p-6">
+    <h2 class="font-semibold text-slate-700 mb-4">Existujici kategorie</h2>
+    <div class="space-y-2">
+    {% for c in categories %}
+    <div class="flex items-center justify-between py-2 border-b last:border-0">
+      <div class="flex items-center gap-3">
+        <div class="w-4 h-4 rounded-full flex-shrink-0" style="background:{{ c.color }}"></div>
+        <span class="text-sm font-medium {% if not c.active %}line-through text-slate-400{% endif %}">{{ c.name }}</span>
+        {% if c.is_income %}<span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">prijem</span>{% endif %}
+      </div>
+      <form method="post" action="/categories/{{ c.id }}/toggle">
+        <button type="submit" class="text-xs {% if c.active %}text-red-400 hover:text-red-600{% else %}text-green-500 hover:text-green-700{% endif %}">
+          {% if c.active %}Deaktivovat{% else %}Aktivovat{% endif %}
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm p-6">
+  <h2 class="font-semibold text-slate-700 mb-4">Pravidla automatickeho zarazovani</h2>
+  {% if rules %}
+  <table class="w-full text-sm">
+    <thead><tr class="text-xs text-slate-400 border-b"><th class="pb-2 text-left">Protistrana</th><th class="pb-2 text-left">Klicove slovo</th><th class="pb-2 text-left">Kategorie</th><th class="pb-2"></th></tr></thead>
+    <tbody>
+    {% for r in rules %}
+    <tr class="border-b last:border-0 hover:bg-slate-50">
+      <td class="py-2">{{ r.counterparty_pattern or '-' }}</td>
+      <td class="py-2">{{ r.keyword or '-' }}</td>
+      <td class="py-2">
+        {% if r.category %}
+        <span class="px-2 py-0.5 rounded-full text-xs text-white" style="background:{{ r.category.color }}">{{ r.category.name }}</span>
+        {% endif %}
+      </td>
+      <td class="py-2">
+        <form method="post" action="/rules/{{ r.id }}/delete" class="inline">
+          <button type="submit" class="text-red-400 hover:text-red-600 text-xs" onclick="return confirm('Smazat pravidlo?')">
+            <i class="fas fa-trash"></i>
+          </button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-slate-400 text-sm">Zatim zadna pravidla. Vytvori se automaticky pri rucnim zarazovani transakci.</p>
+  {% endif %}
+</div>
+{% endblock %}
