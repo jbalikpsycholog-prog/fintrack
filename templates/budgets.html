@@ -1,78 +1,70 @@
 {% extends "base.html" %}
-{% block title %}Plany – FinTrack{% endblock %}
+{% block title %}Rozpočty – FinTrack{% endblock %}
 {% block content %}
-<div class="mb-5">
-  <h1 class="text-2xl font-bold text-slate-800">Plany a Rozpocty</h1>
-  <p class="text-slate-500 text-sm">Nastavte ocekavane vydaje pro jednotliva obdobi</p>
-</div>
+<div class="mb-5 flex items-center justify-between flex-wrap gap-3">
+    <h1 class="text-2xl font-bold text-slate-800">Rozpočty</h1>h1>
+</div>div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  <div class="bg-white rounded-xl shadow-sm p-6">
-    <h2 class="font-semibold text-slate-700 mb-4">Pridat plan</h2>
-    <form method="post" action="/budgets/add" class="space-y-4">
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Kategorie</label>
-        <select name="category_id" required class="w-full border rounded-lg px-3 py-2 text-sm">
-          {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Typ obdobi</label>
-        <select name="period_type" required class="w-full border rounded-lg px-3 py-2 text-sm">
-          <option value="monthly">Mesicni</option>
-          <option value="quarterly">Ctvrtletni</option>
-          <option value="halfyear">Pololetni</option>
-          <option value="yearly">Rocni</option>
-        </select>
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Rok</label>
-          <input type="number" name="year" value="{{ current_year }}" required class="w-full border rounded-lg px-3 py-2 text-sm">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Obdobi (mes/Q/pol)</label>
-          <input type="number" name="period_value" value="1" min="0" max="12" class="w-full border rounded-lg px-3 py-2 text-sm">
-          <p class="text-xs text-slate-400 mt-1">Mesic: 1-12, Q: 1-4, Pol: 1-2, Rok: 0</p>
-        </div>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Planovana castka (Kc)</label>
-        <input type="number" name="amount" step="0.01" required class="w-full border rounded-lg px-3 py-2 text-sm">
-      </div>
-      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium text-sm">Pridat plan</button>
-    </form>
-  </div>
+{% if msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">
+    <i class="fas fa-check-circle mr-2"></i>i>{{ msg }}
+</div>div>
+{% endif %}
 
-  <div class="bg-white rounded-xl shadow-sm p-6">
-    <h2 class="font-semibold text-slate-700 mb-4">Existujici plany</h2>
-    {% if budgets %}
-    <div class="space-y-2">
-    {% for b in budgets %}
-    <div class="flex items-center justify-between py-2 border-b last:border-0">
-      <div>
-        <span class="font-medium text-slate-800 text-sm">{{ b.category.name }}</span>
-        <span class="text-xs text-slate-400 ml-2">
-          {% if b.period_type == 'monthly' %}Mesic {{ b.period_value }}/{{ b.year }}
-          {% elif b.period_type == 'quarterly' %}Q{{ b.period_value }}/{{ b.year }}
-          {% elif b.period_type == 'halfyear' %}{{ b.period_value }}. pololeti {{ b.year }}
-          {% else %}Rok {{ b.year }}{% endif %}
-        </span>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="font-semibold text-slate-700 text-sm">{{ "{:,.0f}".format(b.amount).replace(",", " ") }} Kc</span>
-        <form method="post" action="/budgets/{{ b.id }}/delete" class="inline">
-          <button type="submit" class="text-red-400 hover:text-red-600 text-xs" onclick="return confirm('Smazat?')">
-            <i class="fas fa-trash"></i>
-          </button>
-        </form>
-      </div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+          <h2 class="font-semibold text-slate-700 mb-4">Nastavit měsíční rozpočet</h2>h2>
+          <form method="post" action="/budgets/set" class="space-y-3">
+                  <div>
+                            <label class="block text-sm text-slate-600 mb-1">Kategorie</label>label>
+                            <select name="category" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+                                        {% for c in categories %}
+                                        <option value="{{ c.name }}">{{ c.name }}</option>option>
+                                        {% endfor %}
+                            </select>select>
+                  </div>
+                  <div>
+                            <label class="block text-sm text-slate-600 mb-1">Měsíční limit (Kč)</label>label>
+                            <input type="number" name="amount" step="0.01" min="0" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="napr. 5000">
+                  </div>
+                  <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Uložit rozpočet</button>button>
+          </form>form>
     </div>
-    {% endfor %}
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-100">
+                  <h2 class="font-semibold text-slate-700">Aktuální rozpočty</h2>h2>
+          </div>
+          <table class="w-full text-sm">
+                  <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                        <th class="text-left px-4 py-3 text-slate-600 font-medium">Kategorie</th>th>
+                                        <th class="text-right px-4 py-3 text-slate-600 font-medium">Limit/měsíc</th>th>
+                                        <th class="px-4 py-3"></th>th>
+                            </tr>
+                  </thead>thead>
+                  <tbody>
+                            {% for b in budgets %}
+                            <tr class="border-b border-slate-50 hover:bg-slate-50">
+                                        <td class="px-4 py-3 font-medium text-slate-800">{{ b.category }}</td>td>
+                                        <td class="px-4 py-3 text-right text-slate-700">{{ "%.2f"|format(b.monthly_limit) }} Kč</td>td>
+                                        <td class="px-4 py-3 text-right">
+                                                      <form method="post" action="/budgets/delete/{{ b.id }}">
+                                                                      <button type="submit" class="text-xs text-red-500 hover:text-red-700">Smazat</button>button>
+                                                      </form>form>
+                                        </td>td>
+                            </tr>tr>
+                            {% else %}
+                            <tr>
+                                        <td colspan="3" class="px-4 py-8 text-center text-slate-400">Žádné rozpočty nejsou nastaveny.</td>td>
+                            </tr>tr>
+                            {% endfor %}
+                  </tbody>
+          </table>table>
     </div>
-    {% else %}
-    <p class="text-slate-400 text-sm">Zatim zadne plany.</p>
-    {% endif %}
-  </div>
 </div>
 {% endblock %}
+                  </tbody>
+                            </tr>
+                  </div>
+                  </div>
