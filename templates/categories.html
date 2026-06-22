@@ -1,78 +1,80 @@
 {% extends "base.html" %}
 {% block title %}Kategorie – FinTrack{% endblock %}
 {% block content %}
-<div class="mb-5">
-  <h1 class="text-2xl font-bold text-slate-800">Kategorie</h1>
-</div>
+<div class="mb-5 flex items-center justify-between flex-wrap gap-3">
+    <h1 class="text-2xl font-bold text-slate-800">Kategorie</h1>h1>
+</div>div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-  <div class="bg-white rounded-xl shadow-sm p-6">
-    <h2 class="font-semibold text-slate-700 mb-4">Pridat kategorii</h2>
-    <form method="post" action="/categories/add" class="space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Nazev</label>
-        <input type="text" name="name" required class="w-full border rounded-lg px-3 py-2 text-sm">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Barva</label>
-        <input type="color" name="color" value="#6366f1" class="h-10 w-full rounded-lg border cursor-pointer">
-      </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="is_income" value="true" class="rounded"> Kategorie prijmu
-      </label>
-      <button type="submit" class="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-medium">Pridat</button>
-    </form>
-  </div>
+{% if msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">
+    <i class="fas fa-check-circle mr-2"></i>i>{{ msg }}
+</div>div>
+{% endif %}
 
-  <div class="bg-white rounded-xl shadow-sm p-6">
-    <h2 class="font-semibold text-slate-700 mb-4">Existujici kategorie</h2>
-    <div class="space-y-2">
-    {% for c in categories %}
-    <div class="flex items-center justify-between py-2 border-b last:border-0">
-      <div class="flex items-center gap-3">
-        <div class="w-4 h-4 rounded-full flex-shrink-0" style="background:{{ c.color }}"></div>
-        <span class="text-sm font-medium {% if not c.active %}line-through text-slate-400{% endif %}">{{ c.name }}</span>
-        {% if c.is_income %}<span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">prijem</span>{% endif %}
-      </div>
-      <form method="post" action="/categories/{{ c.id }}/toggle">
-        <button type="submit" class="text-xs {% if c.active %}text-red-400 hover:text-red-600{% else %}text-green-500 hover:text-green-700{% endif %}">
-          {% if c.active %}Deaktivovat{% else %}Aktivovat{% endif %}
-        </button>
-      </form>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+          <h2 class="font-semibold text-slate-700 mb-4">Přidat kategorii</h2>h2>
+          <form method="post" action="/categories/add" class="space-y-3">
+                  <div>
+                            <label class="block text-sm text-slate-600 mb-1">Název kategorie</label>label>
+                            <input type="text" name="name" required class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="napr. MARKETING">
+                  </div>
+                  <div>
+                            <label class="block text-sm text-slate-600 mb-1">Typ</label>label>
+                            <select name="cat_type" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+                                        <option value="expense">Výdaj</option>option>
+                                        <option value="income">Příjem</option>option>
+                            </select>select>
+                  </div>
+                  <div>
+                            <label class="block text-sm text-slate-600 mb-1">Klíčová slova (pro auto-klasifikaci)</label>label>
+                            <input type="text" name="keywords" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="napr. google,microsoft,adobe">
+                            <p class="text-xs text-slate-400 mt-1">Oddělte čárkami. Pokud popis transakce obsahuje toto slovo, automaticky se přiřadí.</p>p>
+                  </div>
+                  <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Přidat kategorii</button>button>
+          </form>form>
     </div>
-    {% endfor %}
-    </div>
-  </div>
-</div>
 
-<div class="bg-white rounded-xl shadow-sm p-6">
-  <h2 class="font-semibold text-slate-700 mb-4">Pravidla automatickeho zarazovani</h2>
-  {% if rules %}
-  <table class="w-full text-sm">
-    <thead><tr class="text-xs text-slate-400 border-b"><th class="pb-2 text-left">Protistrana</th><th class="pb-2 text-left">Klicove slovo</th><th class="pb-2 text-left">Kategorie</th><th class="pb-2"></th></tr></thead>
-    <tbody>
-    {% for r in rules %}
-    <tr class="border-b last:border-0 hover:bg-slate-50">
-      <td class="py-2">{{ r.counterparty_pattern or '-' }}</td>
-      <td class="py-2">{{ r.keyword or '-' }}</td>
-      <td class="py-2">
-        {% if r.category %}
-        <span class="px-2 py-0.5 rounded-full text-xs text-white" style="background:{{ r.category.color }}">{{ r.category.name }}</span>
-        {% endif %}
-      </td>
-      <td class="py-2">
-        <form method="post" action="/rules/{{ r.id }}/delete" class="inline">
-          <button type="submit" class="text-red-400 hover:text-red-600 text-xs" onclick="return confirm('Smazat pravidlo?')">
-            <i class="fas fa-trash"></i>
-          </button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="text-slate-400 text-sm">Zatim zadna pravidla. Vytvori se automaticky pri rucnim zarazovani transakci.</p>
-  {% endif %}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-100">
+                  <h2 class="font-semibold text-slate-700">Aktuální kategorie</h2>h2>
+          </div>
+          <table class="w-full text-sm">
+                  <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                        <th class="text-left px-4 py-3 text-slate-600 font-medium">Název</th>th>
+                                        <th class="text-left px-4 py-3 text-slate-600 font-medium">Typ</th>th>
+                                        <th class="text-left px-4 py-3 text-slate-600 font-medium">Klíčová slova</th>th>
+                                        <th class="px-4 py-3"></th>th>
+                            </tr>
+                  </thead>thead>
+                  <tbody>
+                            {% for c in categories %}
+                            <tr class="border-b border-slate-50 hover:bg-slate-50">
+                                        <td class="px-4 py-3 font-medium text-slate-800">{{ c.name }}</td>td>
+                                        <td class="px-4 py-3">
+                                                      <span class="px-2 py-0.5 rounded text-xs {% if c.cat_type == 'income' %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
+                                                                      {% if c.cat_type == 'income' %}Příjem{% else %}Výdaj{% endif %}
+                                                      </span>span>
+                                        </td>td>
+                                        <td class="px-4 py-3 text-slate-500 text-xs">{{ c.keywords or '–' }}</td>td>
+                                        <td class="px-4 py-3 text-right">
+                                                      <form method="post" action="/categories/delete/{{ c.id }}">
+                                                                      <button type="submit" class="text-xs text-red-500 hover:text-red-700">Smazat</button>button>
+                                                      </form>form>
+                                        </td>td>
+                            </tr>tr>
+                            {% else %}
+                            <tr>
+                                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">Žádné kategorie.</td>td>
+                            </tr>tr>
+                            {% endfor %}
+                  </tbody>
+          </table>table>
+    </div>
 </div>
 {% endblock %}
+                  </tbody>
+                            </tr>
+                  </div>
+                  </div>
