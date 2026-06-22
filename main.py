@@ -1,134 +1,98 @@
 import os
-import io
-import shutil
-from datetime import datetime, date
-from typing import Optional, List
+from datetime import datetime
+from typing import Optional
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
-from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from database import engine, SessionLocal, Base, Category, Transaction, ClassificationRule, Budget, ImportBatch
 from parser_cs import parse_cs_csv
 
-# Inicializace databáze
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="FinTrack OSVČ")
-templates = Jinja2Templates(directory="templates")
 
-# Složka pro přílohy
+# Jinja2 bez cache - obchází bug s dict/tuple
+jinja_env = Environment(
+    loader=FileSystemLoader("templates"),
+    autoescape=select_autoescape(["html"]),
+    auto_reload=True,
+    cache_size=0,
+)
+
+def render(template_name: str, **ctx) -> HTMLResponse:
+    t = jinja_env.get_template(template_name)
+    return HTMLResponse(t.render(**ctx))
+
 RECEIPTS_DIR = Path("receipts")
 RECEIPTS_DIR.mkdir(exist_ok=True)
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 def init_default_categories(db: Session):
-    """Inicializuje výchozí kategorie pokud ještě neexistují."""
     default_cats = [
-        ("SOFTWARE", True),
-        ("HARDWARE", True),
-        ("PRONAJEM", True),
-        ("TEL/INTERNET", True),
-        ("TESTY", True),
-        ("DROB.ADMIN", True),
-        ("DROB.OST.", True),
-        ("FIN.SLUZBY", True),
-        ("VOZIDLO", True),
-        ("PEREX", True),
-        ("PRIJMY", True),
+        "SOFTWARE", "HARDWARE", "PRONAJEM", "TEL/INTERNET", "TESTY",
+        "DROB.ADMIN", "DROB.OST.", "FIN.SLUZBY", "VOZIDLO", "PEREX", "PRIJMY"
     ]
-    for name, active in default_cats:
-        existing = db.query(Category).filter(Category.name == name).first()
-        if not existing:
-            db.add(Category(name=name, is_active=active))
+    for name in default_cats:
+        if not db.query(Category).filter(Category.name == name).first():
+            db.add(Category(name=name, is_active=True))
     db.commit()
 
-
-# ==================== DASHBOARD ====================
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     db = SessionLocal()
     try:
         init_default_categories(db)
-        
         now = datetime.now()
-        current_year = now.year
-        current_month = now.month
-        
-        # Celkový přehled za aktuální rok
-        all_transactions = db.query(Transaction).filter(
-            Transaction.year == current_year
-        ).all()
-        
-        total_income = sum(t.amount for t in all_transactions if t.is_income and not t.excluded)
-        total_expense = sum(abs(t.amount) for t in all_transactions if not t.is_income and not t.excluded)
+        cy = now.year
+
+        txns = db.query(Transaction).filter(Transaction.year == cy).all()
+        total_income = sum(t.amount for t in txns if t.is_income and not t.excluded)
+        total_expense = sum(abs(t.amount) for t in txns if not t.is_income and not t.excluded)
         saldo = total_income - total_expense
-        
-        # Počet nezařazených transakcí
         unclassified_count = db.query(Transaction).filter(
-            Transaction.category_id == None,
-            Transaction.excluded == False
-        ).count()
-        
-        # Výdaje dle kategorie (aktuální rok)
-        categories = db.query(Category).filter(Category.is_active == True).all()
-        category_expenses = []
-        for cat in categories:
-            if cat.name == "PRIJMY":
+            Transaction.category_id == None, Transaction.excluded == False).count()
+
+        cats = db.query(Category).filter(Category.is_active == True).all()
+        cat_expenses = []
+        for c in cats:
+            if c.name == "PRIJMY":
                 continue
-            total = db.query(Transaction).filter(
-                Transaction.category_id == cat.id,
-                Transaction.year == current_year,
-                Transaction.excluded == False
-            ).all()
-            cat_sum = sum(abs(t.amount) for t in total if not t.is_income)
-            if cat_sum > 0:
-                category_expenses.append({"name": cat.name, "total": cat_sum})
-        
-        # Poslední importy
-        recent_imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).limit(5).all()
-        
-        ctx = {
-            "request": request,
-            "total_income": total_income,
-            "total_expense": total_expense,
-            "saldo": saldo,
-            "unclassified_count": unclassified_count,
-            "category_expenses": category_expenses,
-            "recent_imports": recent_imports,
-            "current_year": current_year,
-            "current_month": current_month,
-        }
-        return templates.TemplateResponse("dashboard.html", ctx)
+            s = sum(abs(t.amount) for t in db.query(Transaction).filter(
+                Transaction.category_id == c.id, Transaction.year == cy,
+                Transaction.excluded == False).all() if not t.is_income)
+            if s > 0:
+                cat_expenses.append({"name": c.name, "total": s})
+
+        recent = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).limit(5).all()
+        recent_list = [{"filename": r.filename, "month": r.month, "year": r.year,
+                        "count": r.transaction_count,
+                        "imported_at": r.imported_at.strftime("%d.%m.%Y %H:%M") if r.imported_at else ""
+                        } for r in recent]
+
+        return render("dashboard.html",
+            total_income=total_income, total_expense=total_expense, saldo=saldo,
+            unclassified_count=unclassified_count, category_expenses=cat_expenses,
+            recent_imports=recent_list, current_year=cy, current_month=now.month)
     finally:
         db.close()
 
-
-# ==================== IMPORT ====================
 
 @app.get("/import", response_class=HTMLResponse)
 async def import_page(request: Request):
     db = SessionLocal()
     try:
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
-        return templates.TemplateResponse("import.html", {
-            "request": request,
-            "imports": imports,
-            "message": None,
-            "error": None,
-        })
+        imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
+                     "count": i.transaction_count,
+                     "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""
+                     } for i in imports]
+        return render("import.html", imports=imp_list, message=None, error=None)
     finally:
         db.close()
 
@@ -138,95 +102,50 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
     db = SessionLocal()
     try:
         init_default_categories(db)
-        
         raw = await file.read()
-        
         try:
             transactions_data = parse_cs_csv(raw)
         except Exception as e:
-            imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
-            return templates.TemplateResponse("import.html", {
-                "request": request,
-                "imports": imports,
-                "message": None,
-                "error": f"Chyba při parsování CSV: {str(e)}",
-            })
-        
+            return render("import.html", imports=[], message=None, error=f"Chyba při parsování CSV: {e}")
+
         if not transactions_data:
-            imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
-            return templates.TemplateResponse("import.html", {
-                "request": request,
-                "imports": imports,
-                "message": None,
-                "error": "CSV soubor neobsahuje žádné transakce.",
-            })
-        
-        # Zjisti rok/měsíc z prvního záznamu
+            return render("import.html", imports=[], message=None, error="CSV neobsahuje žádné transakce.")
+
         first_date = transactions_data[0].get("date", "")
         try:
             d = datetime.strptime(first_date, "%Y-%m-%d")
-            import_year = d.year
-            import_month = d.month
+            iy, im = d.year, d.month
         except Exception:
-            import_year = datetime.now().year
-            import_month = datetime.now().month
-        
-        # Vytvoř ImportBatch
-        batch = ImportBatch(
-            filename=file.filename,
-            year=import_year,
-            month=import_month,
-            imported_at=datetime.now(),
-        )
+            iy, im = datetime.now().year, datetime.now().month
+
+        batch = ImportBatch(filename=file.filename, year=iy, month=im,
+                            imported_at=datetime.now())
         db.add(batch)
         db.flush()
-        
-        # Načti pravidla klasifikace
-        rules = db.query(ClassificationRule).all()
-        rule_map = {}
-        for r in rules:
-            key = (r.counterparty_name or "").lower().strip()
-            if key:
-                rule_map[key] = r.category_id
-        
-        new_count = 0
-        duplicate_count = 0
-        
+
+        rules = {(r.counterparty_name or "").lower().strip(): r.category_id
+                 for r in db.query(ClassificationRule).all() if r.counterparty_name}
+
+        new_count = dup_count = 0
         for td in transactions_data:
-            # Detekce duplicit
-            existing = db.query(Transaction).filter(
-                Transaction.cs_transaction_id == td.get("cs_transaction_id", "")
-            ).first()
-            
-            if not existing and td.get("cs_transaction_id"):
-                pass
-            elif existing:
-                duplicate_count += 1
+            if td.get("cs_transaction_id") and db.query(Transaction).filter(
+                    Transaction.cs_transaction_id == td["cs_transaction_id"]).first():
+                dup_count += 1
                 continue
-            
-            # Zjisti rok/měsíc transakce
             try:
-                td_date = datetime.strptime(td.get("date", ""), "%Y-%m-%d")
-                t_year = td_date.year
-                t_month = td_date.month
+                d2 = datetime.strptime(td.get("date", ""), "%Y-%m-%d")
+                ty, tm = d2.year, d2.month
             except Exception:
-                t_year = import_year
-                t_month = import_month
-            
-            # Auto-klasifikace dle pravidel
-            cat_id = None
-            cp_name = (td.get("counterparty_name") or "").lower().strip()
-            if cp_name and cp_name in rule_map:
-                cat_id = rule_map[cp_name]
-            
+                ty, tm = iy, im
+
+            cp = (td.get("counterparty_name") or "").lower().strip()
+            cat_id = rules.get(cp)
+
             t = Transaction(
                 import_batch_id=batch.id,
                 cs_transaction_id=td.get("cs_transaction_id"),
-                date=td.get("date"),
-                year=t_year,
-                month=t_month,
-                amount=td.get("amount", 0),
-                currency=td.get("currency", "CZK"),
+                date=td.get("date"), year=ty, month=tm,
+                amount=td.get("amount", 0), currency=td.get("currency", "CZK"),
                 counterparty_account=td.get("counterparty_account"),
                 counterparty_name=td.get("counterparty_name"),
                 bank_code=td.get("bank_code"),
@@ -236,128 +155,86 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
                 description=td.get("description"),
                 transaction_type=td.get("transaction_type"),
                 is_income=td.get("is_income", False),
-                category_id=cat_id,
-                excluded=False,
+                category_id=cat_id, excluded=False,
             )
             db.add(t)
             new_count += 1
-        
+
         batch.transaction_count = new_count
         db.commit()
-        
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
-        return templates.TemplateResponse("import.html", {
-            "request": request,
-            "imports": imports,
-            "message": f"Import dokončen: {new_count} nových transakcí, {duplicate_count} duplikátů přeskočeno.",
-            "error": None,
-        })
+        imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
+                     "count": i.transaction_count,
+                     "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""
+                     } for i in imports]
+        return render("import.html", imports=imp_list,
+                      message=f"Import dokončen: {new_count} nových, {dup_count} duplikátů.", error=None)
     except Exception as e:
         db.rollback()
-        imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
-        return templates.TemplateResponse("import.html", {
-            "request": request,
-            "imports": imports,
-            "message": None,
-            "error": f"Chyba importu: {str(e)}",
-        })
+        return render("import.html", imports=[], message=None, error=f"Chyba: {e}")
     finally:
         db.close()
 
 
-# ==================== TRANSAKCE ====================
-
 @app.get("/transactions", response_class=HTMLResponse)
-async def transactions(
-    request: Request,
-    year: Optional[int] = None,
-    month: Optional[int] = None,
-    category_id: Optional[int] = None,
-    show_excluded: bool = False,
-    show_unclassified: bool = False,
-):
+async def transactions(request: Request, year: Optional[int] = None,
+                       month: Optional[int] = None, category_id: Optional[int] = None,
+                       show_excluded: bool = False, show_unclassified: bool = False):
     db = SessionLocal()
     try:
         now = datetime.now()
-        if year is None:
-            year = now.year
-        if month is None:
-            month = now.month
-        
-        query = db.query(Transaction).filter(
-            Transaction.year == year,
-            Transaction.month == month,
-        )
-        
+        year = year or now.year
+        month = month or now.month
+        q = db.query(Transaction).filter(Transaction.year == year, Transaction.month == month)
         if show_unclassified:
-            query = query.filter(Transaction.category_id == None, Transaction.excluded == False)
+            q = q.filter(Transaction.category_id == None, Transaction.excluded == False)
         elif not show_excluded:
-            query = query.filter(Transaction.excluded == False)
-        
+            q = q.filter(Transaction.excluded == False)
         if category_id:
-            query = query.filter(Transaction.category_id == category_id)
-        
-        transactions_list = query.order_by(Transaction.date.desc()).all()
-        categories = db.query(Category).filter(Category.is_active == True).all()
-        
-        return templates.TemplateResponse("transactions.html", {
-            "request": request,
-            "transactions": transactions_list,
-            "categories": categories,
-            "year": year,
-            "month": month,
-            "category_id": category_id,
-            "show_excluded": show_excluded,
-            "show_unclassified": show_unclassified,
-            "years": list(range(2020, now.year + 2)),
-            "months": list(range(1, 13)),
-        })
+            q = q.filter(Transaction.category_id == category_id)
+        txns = q.order_by(Transaction.date.desc()).all()
+        cats = db.query(Category).filter(Category.is_active == True).all()
+
+        txn_list = [{"id": t.id, "date": t.date, "amount": t.amount,
+                     "counterparty_name": t.counterparty_name or "",
+                     "description": t.description or "",
+                     "is_income": t.is_income, "excluded": t.excluded,
+                     "category_id": t.category_id,
+                     "category_name": next((c.name for c in cats if c.id == t.category_id), ""),
+                     "receipt_path": t.receipt_path or ""} for t in txns]
+        cat_list = [{"id": c.id, "name": c.name} for c in cats]
+        return render("transactions.html", transactions=txn_list, categories=cat_list,
+                      year=year, month=month, category_id=category_id,
+                      show_excluded=show_excluded, show_unclassified=show_unclassified,
+                      years=list(range(2020, now.year + 2)), months=list(range(1, 13)))
     finally:
         db.close()
 
 
 @app.post("/transactions/{t_id}/categorize")
-async def categorize_transaction(
-    t_id: int,
-    category_id: Optional[int] = Form(None),
-    excluded: bool = Form(False),
-    save_rule: bool = Form(False),
-    year: int = Form(datetime.now().year),
-    month: int = Form(datetime.now().month),
-):
+async def categorize_transaction(t_id: int, category_id: Optional[int] = Form(None),
+                                  excluded: bool = Form(False), save_rule: bool = Form(False),
+                                  year: int = Form(datetime.now().year),
+                                  month: int = Form(datetime.now().month)):
     db = SessionLocal()
     try:
         t = db.query(Transaction).filter(Transaction.id == t_id).first()
         if not t:
-            raise HTTPException(status_code=404, detail="Transakce nenalezena")
-        
+            raise HTTPException(status_code=404)
         t.category_id = category_id if category_id and category_id > 0 else None
         t.excluded = excluded
-        
-        # Uložit pravidlo
         if save_rule and category_id and t.counterparty_name:
-            existing_rule = db.query(ClassificationRule).filter(
-                ClassificationRule.counterparty_name == t.counterparty_name
-            ).first()
-            if existing_rule:
-                existing_rule.category_id = category_id
+            er = db.query(ClassificationRule).filter(
+                ClassificationRule.counterparty_name == t.counterparty_name).first()
+            if er:
+                er.category_id = category_id
             else:
-                rule = ClassificationRule(
-                    counterparty_name=t.counterparty_name,
-                    category_id=category_id,
-                )
-                db.add(rule)
-        
+                db.add(ClassificationRule(counterparty_name=t.counterparty_name, category_id=category_id))
         db.commit()
-        return RedirectResponse(
-            url=f"/transactions?year={year}&month={month}",
-            status_code=303
-        )
+        return RedirectResponse(url=f"/transactions?year={year}&month={month}", status_code=303)
     finally:
         db.close()
 
-
-# ==================== PŘÍLOHY ====================
 
 @app.post("/transactions/{t_id}/receipt")
 async def upload_receipt(t_id: int, receipt: UploadFile = File(...)):
@@ -365,19 +242,13 @@ async def upload_receipt(t_id: int, receipt: UploadFile = File(...)):
     try:
         t = db.query(Transaction).filter(Transaction.id == t_id).first()
         if not t:
-            raise HTTPException(status_code=404, detail="Transakce nenalezena")
-        
-        receipt_dir = RECEIPTS_DIR / str(t_id)
-        receipt_dir.mkdir(exist_ok=True)
-        
-        safe_filename = os.path.basename(receipt.filename)
-        file_path = receipt_dir / safe_filename
-        
-        with open(file_path, "wb") as f:
-            content = await receipt.read()
-            f.write(content)
-        
-        t.receipt_path = str(file_path)
+            raise HTTPException(status_code=404)
+        d = RECEIPTS_DIR / str(t_id)
+        d.mkdir(exist_ok=True)
+        fp = d / os.path.basename(receipt.filename)
+        with open(fp, "wb") as f:
+            f.write(await receipt.read())
+        t.receipt_path = str(fp)
         db.commit()
         return RedirectResponse(url="/transactions", status_code=303)
     finally:
@@ -386,38 +257,25 @@ async def upload_receipt(t_id: int, receipt: UploadFile = File(...)):
 
 @app.get("/receipts/{t_id}/{filename}")
 async def get_receipt(t_id: int, filename: str):
-    file_path = RECEIPTS_DIR / str(t_id) / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Soubor nenalezen")
-    return FileResponse(str(file_path))
+    fp = RECEIPTS_DIR / str(t_id) / filename
+    if not fp.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(str(fp))
 
-
-# ==================== KATEGORIE ====================
 
 @app.get("/categories", response_class=HTMLResponse)
 async def categories_page(request: Request):
     db = SessionLocal()
     try:
-        categories = db.query(Category).order_by(Category.name).all()
+        cats = db.query(Category).order_by(Category.name).all()
         rules = db.query(ClassificationRule).all()
-        
-        # Načti jména kategorií pro pravidla
-        cat_map = {c.id: c.name for c in categories}
-        rules_with_cat = []
-        for r in rules:
-            rules_with_cat.append({
-                "id": r.id,
-                "counterparty_name": r.counterparty_name,
-                "description_contains": r.description_contains,
-                "category_name": cat_map.get(r.category_id, "?"),
-                "category_id": r.category_id,
-            })
-        
-        return templates.TemplateResponse("categories.html", {
-            "request": request,
-            "categories": categories,
-            "rules": rules_with_cat,
-        })
+        cat_map = {c.id: c.name for c in cats}
+        cat_list = [{"id": c.id, "name": c.name, "is_active": c.is_active} for c in cats]
+        rule_list = [{"id": r.id, "counterparty_name": r.counterparty_name or "",
+                      "description_contains": r.description_contains or "",
+                      "category_name": cat_map.get(r.category_id, "?"),
+                      "category_id": r.category_id} for r in rules]
+        return render("categories.html", categories=cat_list, rules=rule_list)
     finally:
         db.close()
 
@@ -427,8 +285,7 @@ async def add_category(name: str = Form(...)):
     db = SessionLocal()
     try:
         name = name.strip().upper()
-        existing = db.query(Category).filter(Category.name == name).first()
-        if not existing:
+        if not db.query(Category).filter(Category.name == name).first():
             db.add(Category(name=name, is_active=True))
             db.commit()
         return RedirectResponse(url="/categories", status_code=303)
@@ -440,9 +297,9 @@ async def add_category(name: str = Form(...)):
 async def toggle_category(cat_id: int):
     db = SessionLocal()
     try:
-        cat = db.query(Category).filter(Category.id == cat_id).first()
-        if cat:
-            cat.is_active = not cat.is_active
+        c = db.query(Category).filter(Category.id == cat_id).first()
+        if c:
+            c.is_active = not c.is_active
             db.commit()
         return RedirectResponse(url="/categories", status_code=303)
     finally:
@@ -453,147 +310,82 @@ async def toggle_category(cat_id: int):
 async def delete_rule(rule_id: int):
     db = SessionLocal()
     try:
-        rule = db.query(ClassificationRule).filter(ClassificationRule.id == rule_id).first()
-        if rule:
-            db.delete(rule)
+        r = db.query(ClassificationRule).filter(ClassificationRule.id == rule_id).first()
+        if r:
+            db.delete(r)
             db.commit()
         return RedirectResponse(url="/categories", status_code=303)
     finally:
         db.close()
 
 
-# ==================== SESTAVY ====================
-
 @app.get("/reports", response_class=HTMLResponse)
-async def reports(
-    request: Request,
-    period: str = "monthly",
-    year: Optional[int] = None,
-    month: Optional[int] = None,
-):
+async def reports(request: Request, period: str = "monthly",
+                  year: Optional[int] = None, month: Optional[int] = None):
     db = SessionLocal()
     try:
         now = datetime.now()
-        if year is None:
-            year = now.year
-        if month is None:
-            month = now.month
-        
-        categories = db.query(Category).filter(Category.is_active == True).all()
-        
-        # Určit rozsah
+        year = year or now.year
+        month = month or now.month
         if period == "monthly":
             months_range = [month]
         elif period == "quarterly":
             q = (month - 1) // 3
             months_range = [q*3+1, q*3+2, q*3+3]
         elif period == "halfyear":
-            if month <= 6:
-                months_range = list(range(1, 7))
-            else:
-                months_range = list(range(7, 13))
-        else:  # annual
+            months_range = list(range(1, 7)) if month <= 6 else list(range(7, 13))
+        else:
             months_range = list(range(1, 13))
-        
-        # Data dle kategorií
+
+        cats = db.query(Category).filter(Category.is_active == True).all()
         report_data = []
-        total_income = 0
-        total_expense = 0
-        
-        for cat in categories:
+        total_income = total_expense = 0
+
+        for c in cats:
             txns = db.query(Transaction).filter(
-                Transaction.category_id == cat.id,
-                Transaction.year == year,
-                Transaction.month.in_(months_range),
-                Transaction.excluded == False,
-            ).all()
-            
-            income = sum(t.amount for t in txns if t.is_income)
-            expense = sum(abs(t.amount) for t in txns if not t.is_income)
-            
-            if income > 0 or expense > 0:
-                # Rozpočet
-                budget = db.query(Budget).filter(
-                    Budget.category_id == cat.id,
-                    Budget.year == year,
-                ).first()
-                budget_amount = budget.amount if budget else 0
-                
-                report_data.append({
-                    "category": cat.name,
-                    "income": income,
-                    "expense": expense,
-                    "budget": budget_amount,
-                    "diff": budget_amount - expense if budget_amount > 0 else None,
-                })
-                total_income += income
-                total_expense += expense
-        
-        # Nezařazené
-        uncat_txns = db.query(Transaction).filter(
-            Transaction.category_id == None,
-            Transaction.year == year,
-            Transaction.month.in_(months_range),
-            Transaction.excluded == False,
-        ).all()
-        uncat_expense = sum(abs(t.amount) for t in uncat_txns if not t.is_income)
-        uncat_income = sum(t.amount for t in uncat_txns if t.is_income)
-        if uncat_expense > 0 or uncat_income > 0:
-            report_data.append({
-                "category": "NEZAŘAZENO",
-                "income": uncat_income,
-                "expense": uncat_expense,
-                "budget": 0,
-                "diff": None,
-            })
-            total_income += uncat_income
-            total_expense += uncat_expense
-        
-        return templates.TemplateResponse("reports.html", {
-            "request": request,
-            "report_data": report_data,
-            "total_income": total_income,
-            "total_expense": total_expense,
-            "saldo": total_income - total_expense,
-            "period": period,
-            "year": year,
-            "month": month,
-            "years": list(range(2020, now.year + 2)),
-            "months": list(range(1, 13)),
-        })
+                Transaction.category_id == c.id, Transaction.year == year,
+                Transaction.month.in_(months_range), Transaction.excluded == False).all()
+            inc = sum(t.amount for t in txns if t.is_income)
+            exp = sum(abs(t.amount) for t in txns if not t.is_income)
+            if inc > 0 or exp > 0:
+                b = db.query(Budget).filter(Budget.category_id == c.id, Budget.year == year).first()
+                ba = b.amount if b else 0
+                report_data.append({"category": c.name, "income": inc, "expense": exp,
+                                     "budget": ba, "diff": ba - exp if ba > 0 else None})
+                total_income += inc
+                total_expense += exp
+
+        unc = db.query(Transaction).filter(Transaction.category_id == None,
+            Transaction.year == year, Transaction.month.in_(months_range),
+            Transaction.excluded == False).all()
+        ue = sum(abs(t.amount) for t in unc if not t.is_income)
+        ui = sum(t.amount for t in unc if t.is_income)
+        if ue > 0 or ui > 0:
+            report_data.append({"category": "NEZARAZENO", "income": ui, "expense": ue,
+                                 "budget": 0, "diff": None})
+            total_income += ui
+            total_expense += ue
+
+        return render("reports.html", report_data=report_data, total_income=total_income,
+                      total_expense=total_expense, saldo=total_income - total_expense,
+                      period=period, year=year, month=month,
+                      years=list(range(2020, now.year + 2)), months=list(range(1, 13)))
     finally:
         db.close()
 
-
-# ==================== ROZPOČTY ====================
 
 @app.get("/budgets", response_class=HTMLResponse)
 async def budgets_page(request: Request, year: Optional[int] = None):
     db = SessionLocal()
     try:
-        if year is None:
-            year = datetime.now().year
-        
-        categories = db.query(Category).filter(Category.is_active == True).all()
-        budgets = db.query(Budget).filter(Budget.year == year).all()
-        budget_map = {b.category_id: b for b in budgets}
-        
-        budget_list = []
-        for cat in categories:
-            b = budget_map.get(cat.id)
-            budget_list.append({
-                "category_id": cat.id,
-                "category_name": cat.name,
-                "amount": b.amount if b else 0,
-                "budget_id": b.id if b else None,
-            })
-        
-        return templates.TemplateResponse("budgets.html", {
-            "request": request,
-            "budget_list": budget_list,
-            "year": year,
-            "years": list(range(2020, datetime.now().year + 2)),
-        })
+        year = year or datetime.now().year
+        cats = db.query(Category).filter(Category.is_active == True).all()
+        budgets = {b.category_id: b for b in db.query(Budget).filter(Budget.year == year).all()}
+        bl = [{"category_id": c.id, "category_name": c.name,
+               "amount": budgets[c.id].amount if c.id in budgets else 0,
+               "budget_id": budgets[c.id].id if c.id in budgets else None} for c in cats]
+        return render("budgets.html", budget_list=bl, year=year,
+                      years=list(range(2020, datetime.now().year + 2)))
     finally:
         db.close()
 
@@ -604,25 +396,15 @@ async def save_budgets(request: Request):
     try:
         form = await request.form()
         year = int(form.get("year", datetime.now().year))
-        
         for key, value in form.items():
             if key.startswith("budget_cat_"):
                 cat_id = int(key.replace("budget_cat_", ""))
-                try:
-                    amount = float(value) if value else 0
-                except ValueError:
-                    amount = 0
-                
-                existing = db.query(Budget).filter(
-                    Budget.category_id == cat_id,
-                    Budget.year == year,
-                ).first()
-                
-                if existing:
-                    existing.amount = amount
+                amount = float(value) if value else 0
+                ex = db.query(Budget).filter(Budget.category_id == cat_id, Budget.year == year).first()
+                if ex:
+                    ex.amount = amount
                 else:
                     db.add(Budget(category_id=cat_id, year=year, amount=amount))
-        
         db.commit()
         return RedirectResponse(url=f"/budgets?year={year}", status_code=303)
     finally:
