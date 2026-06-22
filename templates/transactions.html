@@ -2,154 +2,107 @@
 {% block title %}Transakce – FinTrack{% endblock %}
 {% block content %}
 <div class="mb-5 flex items-center justify-between flex-wrap gap-3">
-  <div>
-    <h1 class="text-2xl font-bold text-slate-800">
-      {% if current_filter == 'unclassified' %}Nezarazene polozky{% elif current_filter == 'excluded' %}Vyloucene polozky{% elif current_filter == 'income' %}Prijmy{% elif current_filter == 'expense' %}Vydaje{% else %}Vsechny transakce{% endif %}
-    </h1>
-  </div>
-  <div class="flex gap-2 flex-wrap">
-    <a href="/transactions" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if not current_filter %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vse</a>
-    <a href="/transactions?t_type=unclassified" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter=='unclassified' %}bg-orange-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Nezarazene ({{ unclassified_count }})</a>
-    <a href="/transactions?t_type=income" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter=='income' %}bg-green-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Prijmy</a>
-    <a href="/transactions?t_type=expense" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter=='expense' %}bg-red-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vydaje</a>
-    <a href="/transactions?t_type=excluded" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter=='excluded' %}bg-slate-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vyloucene</a>
-  </div>
+    <div>
+          <h1 class="text-2xl font-bold text-slate-800">
+                  {% if current_filter == 'unclassified' %}Nezařazené položky
+                  {% elif current_filter == 'excluded' %}Vyloučené položky
+                  {% elif current_filter == 'income' %}Příjmy
+                  {% elif current_filter == 'expense' %}Výdaje
+                  {% else %}Všechny transakce
+                  {% endif %}
+          </h1>h1>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+          <a href="/transactions" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if not current_filter %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vše</a>a>
+          <a href="/transactions?t_type=unclassified" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'unclassified' %}bg-orange-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Nezařazené</a>a>
+          <a href="/transactions?t_type=income" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'income' %}bg-green-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Příjmy</a>a>
+          <a href="/transactions?t_type=expense" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'expense' %}bg-red-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Výdaje</a>a>
+          <a href="/transactions?t_type=excluded" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'excluded' %}bg-slate-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vyloučené</a>a>
+    </div>
 </div>
 
 {% if msg %}
 <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">
-  <i class="fas fa-check-circle mr-2"></i>{{ msg }}
+    <i class="fas fa-check-circle mr-2"></i>i>{{ msg }}
 </div>
 {% endif %}
 
 <form method="get" class="flex gap-2 mb-4 flex-wrap">
-  {% if current_filter %}<input type="hidden" name="t_type" value="{{ current_filter }}">{% endif %}
-  <input type="text" name="search" value="{{ search }}" placeholder="Hledat..." class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-40">
-  <select name="month" class="border rounded-lg px-3 py-2 text-sm bg-white">
-    <option value="">Vsechny mesice</option>
-    {% for i in range(1,13) %}<option value="{{ i }}" {% if i == month %}selected{% endif %}>{{ months_cz[i-1] }}</option>{% endfor %}
-  </select>
-  <select name="year" class="border rounded-lg px-3 py-2 text-sm bg-white">
-    <option value="">Vsechny roky</option>
-    {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
-  </select>
-  <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Filtrovat</button>
-</form>
-
-<div class="bg-white rounded-xl shadow-sm overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="bg-slate-50 border-b">
-      <tr class="text-left text-slate-500 text-xs uppercase tracking-wide">
-        <th class="px-4 py-3">Datum</th>
-        <th class="px-4 py-3">Popis / Protistrana</th>
-        <th class="px-4 py-3">Castka</th>
-        <th class="px-4 py-3">Kategorie</th>
-        <th class="px-4 py-3">Doklad</th>
-        <th class="px-4 py-3"></th>
-      </tr>
-    </thead>
-    <tbody id="transTable">
-    {% for t in transactions %}
-    <tr class="border-b last:border-0 hover:bg-slate-50 {% if t.excluded %}opacity-40{% endif %}" id="row-{{ t.id }}">
-      <td class="px-4 py-3 whitespace-nowrap">{{ t.date.strftime('%d.%m.%Y') }}</td>
-      <td class="px-4 py-3">
-        <div class="font-medium text-slate-800">{{ t.counterparty_name or t.description or '-' }}</div>
-        {% if t.description and t.counterparty_name %}<div class="text-xs text-slate-400">{{ t.description }}</div>{% endif %}
-        {% if t.note %}<div class="text-xs text-slate-400">{{ t.note }}</div>{% endif %}
-      </td>
-      <td class="px-4 py-3 whitespace-nowrap font-semibold {% if t.amount > 0 %}text-green-600{% else %}text-red-500{% endif %}">
-        {{ "{:,.2f}".format(t.amount).replace(",", " ") }} Kc
-      </td>
-      <td class="px-4 py-3">
-        <div class="flex items-center gap-2">
-          {% if t.category %}
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white" style="background:{{ t.category.color }}">
-            {{ t.category.name }}
-          </span>
-          {% elif t.excluded %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-600">Vylouceno</span>
-          {% else %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-600">Nezarazeno</span>
-          {% endif %}
-        </div>
-      </td>
-      <td class="px-4 py-3">
-        {% if t.receipt_filename %}
-        <a href="/receipts/{{ t.receipt_filename }}" target="_blank" class="text-indigo-600 hover:underline text-xs"><i class="fas fa-paperclip"></i> Doklad</a>
-        {% else %}
-        <label class="text-xs text-slate-400 cursor-pointer hover:text-indigo-600">
-          <i class="fas fa-upload"></i> Nahrat
-          <input type="file" class="hidden" onchange="uploadReceipt({{ t.id }}, this)">
-        </label>
-        {% endif %}
-      </td>
-      <td class="px-4 py-3">
-        <button onclick="openCategorize({{ t.id }}, {{ t.category_id or 'null' }}, {{ 'true' if t.excluded else 'false' }})"
-          class="text-xs text-indigo-600 hover:underline">Zaradit</button>
-      </td>
-    </tr>
-    {% endfor %}
-    {% if not transactions %}
-    <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">Zadne transakce</td></tr>
-    {% endif %}
-    </tbody>
-  </table>
-</div>
-
-<!-- Modal pro kategorizaci -->
-<div id="catModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-  <div class="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-    <h3 class="font-semibold text-slate-800 mb-4">Zaradit transakci</h3>
-    <div class="space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Kategorie</label>
-        <select id="catSelect" class="w-full border rounded-lg px-3 py-2 text-sm">
-          <option value="">-- Nezarazeno --</option>
-          {% for c in categories %}
-          <option value="{{ c.id }}">{{ c.name }}</option>
+    {% if current_filter %}<input type="hidden" name="t_type" value="{{ current_filter }}">{% endif %}
+    <input type="text" name="search" value="{{ search }}" placeholder="Hledat..." class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-40">
+    <select name="month" class="border rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="">Všechny měsíce</option>option>
+          {% for m in months %}
+          <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>option>
           {% endfor %}
-        </select>
-      </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input type="checkbox" id="excludeCheck" class="rounded"> Vyloucit z danovych vydaju
-      </label>
-      <label class="flex items-center gap-2 text-sm">
-        <input type="checkbox" id="saveRuleCheck" class="rounded" checked> Zapamatovat pravidlo pro pristi import
-      </label>
-    </div>
-    <div class="flex gap-3 mt-5">
-      <button onclick="closeCategorize()" class="flex-1 border border-slate-200 text-slate-600 py-2 rounded-lg text-sm">Zrusit</button>
-      <button onclick="saveCategorize()" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium">Ulozit</button>
-    </div>
-  </div>
+    </select>select>
+    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Hledat</button>button>
+</form>form>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-100">
+                  <tr>
+                            <th class="text-left px-4 py-3 text-slate-600 font-medium">Datum</th>th>
+                            <th class="text-left px-4 py-3 text-slate-600 font-medium">Popis</th>th>
+                            <th class="text-left px-4 py-3 text-slate-600 font-medium">Kategorie</th>th>
+                            <th class="text-right px-4 py-3 text-slate-600 font-medium">Částka</th>th>
+                            <th class="text-left px-4 py-3 text-slate-600 font-medium">Akce</th>th>
+                  </tr>
+          </thead>thead>
+          <tbody>
+                  {% for t in transactions %}
+                  <tr class="border-b border-slate-50 hover:bg-slate-50">
+                            <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ t.date }}</td>td>
+                            <td class="px-4 py-3 text-slate-800">
+                                        <div class="font-medium">{{ t.description }}</div>
+                                        {% if t.counterparty %}
+                                        <div class="text-xs text-slate-400">{{ t.counterparty }}</div>
+                                        {% endif %}
+                            </td>td>
+                            <td class="px-4 py-3">
+                                        <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center">
+                                                      <select name="category" class="border rounded px-2 py-1 text-xs bg-white">
+                                                                      <option value="">– kategorie –</option>option>
+                                                                      {% for c in categories %}
+                                                                      <option value="{{ c.name }}" {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>option>
+                                                                      {% endfor %}
+                                                                      <option value="EXCLUDED" {% if t.category == 'EXCLUDED' %}selected{% endif %}>VYLOUČIT</option>option>
+                                                      </select>select>
+                                                      <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">OK</button>button>
+                                        </form>form>
+                            </td>td>
+                            <td class="px-4 py-3 text-right font-medium whitespace-nowrap {% if t.amount > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                        {{ "%.2f"|format(t.amount) }} Kč
+                            </td>td>
+                            <td class="px-4 py-3">
+                                        <a href="/transactions/{{ t.id }}" class="text-indigo-600 hover:underline text-xs">Detail</a>a>
+                            </td>td>
+                  </tr>tr>
+                  {% else %}
+                  <tr>
+                            <td colspan="5" class="px-4 py-8 text-center text-slate-400">Žádné transakce nenalezeny.</td>td>
+                  </tr>tr>
+                  {% endfor %}
+          </tbody>
+    </table>table>
+</div>
+
+{% if total_pages > 1 %}
+<div class="flex gap-2 mt-4 justify-center flex-wrap">
+    {% for p in range(1, total_pages + 1) %}
+    <a href="?page={{ p }}{% if current_filter %}&t_type={{ current_filter }}{% endif %}{% if search %}&search={{ search }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}"
+           class="px-3 py-1.5 rounded text-sm {% if p == page %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+          {{ p }}
+    </a>a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="mt-4 text-sm text-slate-500">
+    Celkem: {{ total_count }} transakcí
 </div>
 {% endblock %}
-{% block scripts %}
-<script>
-let currentTid = null;
-function openCategorize(tid, catId, excluded) {
-  currentTid = tid;
-  document.getElementById('catSelect').value = catId || '';
-  document.getElementById('excludeCheck').checked = excluded;
-  document.getElementById('catModal').classList.remove('hidden');
-}
-function closeCategorize() { document.getElementById('catModal').classList.add('hidden'); }
-async function saveCategorize() {
-  const catId = document.getElementById('catSelect').value;
-  const excluded = document.getElementById('excludeCheck').checked;
-  const saveRule = document.getElementById('saveRuleCheck').checked;
-  await postForm('/transactions/' + currentTid + '/categorize', {
-    category_id: catId, excluded: excluded, save_rule: saveRule
-  });
-  closeCategorize();
-  location.reload();
-}
-async function uploadReceipt(tid, input) {
-  const fd = new FormData();
-  fd.append('file', input.files[0]);
-  const r = await fetch('/transactions/' + tid + '/receipt', {method:'POST', body:fd});
-  const d = await r.json();
-  if (d.ok) location.reload();
-}
-</script>
-{% endblock %}
+          </tbody>
+                  </tr>
+    </div>
