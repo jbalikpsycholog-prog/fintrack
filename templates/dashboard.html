@@ -109,8 +109,8 @@
 
 {% if category_expenses %}
 <script>
-const ctx = document.getElementById('catChart').getContext('2d');
-new Chart(ctx, {
+const chartCtx = document.getElementById('catChart').getContext('2d');
+new Chart(chartCtx, {
   type: 'doughnut',
   data: {
     labels: [{% for c in category_expenses %}'{{ c.name }}'{% if not loop.last %},{% endif %}{% endfor %}],
