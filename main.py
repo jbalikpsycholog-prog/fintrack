@@ -13,7 +13,7 @@ from parser_cs import parse_cs_csv
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="FinTrack OSVÃÂ")
+app = FastAPI(title="FinTrack OSVC")
 
 jinja_env = Environment(
     loader=FileSystemLoader("templates"),
@@ -22,20 +22,24 @@ jinja_env = Environment(
     cache_size=0,
 )
 
+
 def render(template_name: str, **ctx) -> HTMLResponse:
     t = jinja_env.get_template(template_name)
     return HTMLResponse(t.render(**ctx))
+
 
 DEFAULT_CATEGORIES = [
     "SOFTWARE", "HARDWARE", "PRONAJEM", "TEL/INTERNET", "TESTY",
     "DROB.ADMIN", "DROB.OST.", "FIN.SLUZBY", "VOZIDLO", "PEREX", "PRIJMY"
 ]
 
+
 def init_default_categories(db: Session):
     for name in DEFAULT_CATEGORIES:
         if not db.query(Category).filter(Category.name == name).first():
             db.add(Category(name=name, is_active=True))
-        db.commit()
+    db.commit()
+
 
 def cat_name(db, cat_id):
     if not cat_id:
@@ -56,24 +60,24 @@ async def dashboard(request: Request):
         total_expense = sum(abs(t.amount) for t in txns if not t.is_income and not t.excluded)
         saldo = total_income - total_expense
         unclassified_count = db.query(Transaction).filter(
-        Transaction.category_id == None, Transaction.excluded == False).count()
+            Transaction.category_id == None, Transaction.excluded == False).count()
         cats = db.query(Category).filter(Category.is_active == True).all()
         cat_expenses = []
         for c in cats:
             s = sum(abs(t.amount) for t in db.query(Transaction).filter(
-            Transaction.category_id == c.id, Transaction.year == cy,
-            Transaction.excluded == False).all() if not t.is_income)
+                Transaction.category_id == c.id, Transaction.year == cy,
+                Transaction.excluded == False).all() if not t.is_income)
             if s > 0:
                 cat_expenses.append({"name": c.name, "total": s})
         recent = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).limit(5).all()
         recent_list = [{"filename": r.filename, "month": r.month, "year": r.year,
-        "count": r.transaction_count,
-        "imported_at": r.imported_at.strftime("%d.%m.%Y %H:%M") if r.imported_at else ""}
-        for r in recent]
+                        "count": r.transaction_count,
+                        "imported_at": r.imported_at.strftime("%d.%m.%Y %H:%M") if r.imported_at else ""}
+                       for r in recent]
         return render("dashboard.html",
-        total_income=total_income, total_expense=total_expense, saldo=saldo,
-        unclassified_count=unclassified_count, category_expenses=cat_expenses,
-        recent_imports=recent_list, current_year=cy, current_month=now.month)
+                      total_income=total_income, total_expense=total_expense, saldo=saldo,
+                      unclassified_count=unclassified_count, category_expenses=cat_expenses,
+                      recent_imports=recent_list, current_year=cy, current_month=now.month)
     finally:
         db.close()
 
@@ -84,12 +88,13 @@ async def import_page(request: Request):
     try:
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
         imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
-        "count": i.transaction_count,
-        "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
-        for i in imports]
+                     "count": i.transaction_count,
+                     "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
+                    for i in imports]
         return render("import.html", imports=imp_list, message=None, error=None)
     finally:
         db.close()
+
 
 @app.post("/import", response_class=HTMLResponse)
 async def import_csv(request: Request, file: UploadFile = File(...)):
@@ -100,9 +105,9 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
         try:
             transactions_data = parse_cs_csv(raw)
         except Exception as e:
-            return render("import.html", imports=[], message=None, error=f"Chyba parsovÃÂ¡nÃÂ­: {e}")
+            return render("import.html", imports=[], message=None, error=f"Chyba parsovani: {e}")
         if not transactions_data:
-            return render("import.html", imports=[], message=None, error="CSV je prÃÂ¡zdnÃÂ©.")
+            return render("import.html", imports=[], message=None, error="CSV je prazdne.")
         first_date = transactions_data[0].get("date", "")
         try:
             d = datetime.strptime(first_date, "%Y-%m-%d")
@@ -110,7 +115,7 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
         except Exception:
             iy, im = datetime.now().year, datetime.now().month
         batch = ImportBatch(filename=file.filename, month=im, year=iy,
-        transaction_count=len(transactions_data), imported_at=datetime.now())
+                            transaction_count=len(transactions_data), imported_at=datetime.now())
         db.add(batch)
         db.flush()
         rules = db.query(ClassificationRule).all()
@@ -140,12 +145,12 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
         db.commit()
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
         imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
-        "count": i.transaction_count,
-        "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
-        for i in imports]
+                     "count": i.transaction_count,
+                     "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
+                    for i in imports]
         return render("import.html", imports=imp_list,
-        message=f"ImportovÃÂ¡no {len(transactions_data)} transakcÃÂ­ z {file.filename}.",
-        error=None)
+                      message=f"Importovano {len(transactions_data)} transakci z {file.filename}.",
+                      error=None)
     except Exception as e:
         db.rollback()
         return render("import.html", imports=[], message=None, error=f"Chyba: {e}")
@@ -174,8 +179,8 @@ async def transactions_page(
             q = q.filter(Transaction.excluded == True)
         if search:
             q = q.filter(
-            (Transaction.description.ilike(f"%{search}%")) |
-            (Transaction.counterparty_name.ilike(f"%{search}%"))
+                (Transaction.description.ilike(f"%{search}%")) |
+                (Transaction.counterparty_name.ilike(f"%{search}%"))
             )
         if month:
             try:
@@ -191,27 +196,28 @@ async def transactions_page(
         txns = q.offset((page - 1) * per_page).limit(per_page).all()
         cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
         all_months_q = db.query(Transaction.year, Transaction.month).distinct().order_by(
-        Transaction.year.desc(), Transaction.month.desc()).all()
+            Transaction.year.desc(), Transaction.month.desc()).all()
         months_list = [f"{r[0]}-{r[1]:02d}" for r in all_months_q]
         t_list = []
         for t in txns:
             t_list.append({
-            "id": t.id,
-            "date": t.date,
-            "description": t.description or "",
-            "counterparty": t.counterparty_name or "",
-            "amount": t.amount,
-            "is_income": t.is_income,
-            "excluded": t.excluded,
-            "category": cat_name(db, t.category_id),
+                "id": t.id,
+                "date": t.date,
+                "description": t.description or "",
+                "counterparty": t.counterparty_name or "",
+                "amount": t.amount,
+                "is_income": t.is_income,
+                "excluded": t.excluded,
+                "category": cat_name(db, t.category_id),
             })
         return render("transactions.html",
-        transactions=t_list, categories=cats,
-        current_filter=t_type, search=search or "",
-        months=months_list, selected_month=month or "",
-        page=page, total_pages=total_pages, total_count=total_count, msg=None)
+                      transactions=t_list, categories=cats,
+                      current_filter=t_type, search=search or "",
+                      months=months_list, selected_month=month or "",
+                      page=page, total_pages=total_pages, total_count=total_count, msg=None)
     finally:
         db.close()
+
 
 @app.post("/transactions/{t_id}/categorize")
 async def categorize_transaction(t_id: int, category: str = Form("")):
@@ -247,6 +253,7 @@ async def categories_page(request: Request):
     finally:
         db.close()
 
+
 @app.post("/categories/add")
 async def add_category(name: str = Form(...), cat_type: str = Form("expense"), keywords: str = Form("")):
     db = SessionLocal()
@@ -258,6 +265,7 @@ async def add_category(name: str = Form(...), cat_type: str = Form("expense"), k
         return RedirectResponse(url="/categories", status_code=303)
     finally:
         db.close()
+
 
 @app.post("/categories/delete/{cat_id}")
 async def delete_category(cat_id: int):
@@ -287,6 +295,7 @@ async def budgets_page(request: Request):
     finally:
         db.close()
 
+
 @app.post("/budgets/set")
 async def set_budget(category: str = Form(...), amount: float = Form(...)):
     db = SessionLocal()
@@ -303,6 +312,7 @@ async def set_budget(category: str = Form(...), amount: float = Form(...)):
         return RedirectResponse(url="/budgets", status_code=303)
     finally:
         db.close()
+
 
 @app.post("/budgets/delete/{bud_id}")
 async def delete_budget(bud_id: int):
@@ -361,20 +371,20 @@ async def reports_page(
         monthly_labels = []
         monthly_incomes = []
         monthly_expenses_chart = []
-        month_names = ["Led","Uno","Bre","Dub","Kve","Cer","Cvc","Srp","Zar","Rij","Lis","Pro"]
+        month_names = ["Led", "Uno", "Bre", "Dub", "Kve", "Cer", "Cvc", "Srp", "Zar", "Rij", "Lis", "Pro"]
         for m in range(1, 13):
             mt = db.query(Transaction).filter(
-            Transaction.year == year, Transaction.month == m,
-            Transaction.excluded == False).all()
+                Transaction.year == year, Transaction.month == m,
+                Transaction.excluded == False).all()
             monthly_labels.append(month_names[m - 1])
             monthly_incomes.append(round(sum(t.amount for t in mt if t.is_income), 2))
             monthly_expenses_chart.append(round(sum(abs(t.amount) for t in mt if not t.is_income), 2))
         available_years = list(range(2020, now.year + 2))
         return render("reports.html",
-        total_income=total_income, total_expenses=total_expenses, saldo=saldo,
-        by_category=by_category, monthly_data=True,
-        monthly_labels=monthly_labels, monthly_incomes=monthly_incomes,
-        monthly_expenses=monthly_expenses_chart,
-        years=available_years, selected_year=year, period=period, selected_month=month)
+                      total_income=total_income, total_expenses=total_expenses, saldo=saldo,
+                      by_category=by_category, monthly_data=True,
+                      monthly_labels=monthly_labels, monthly_incomes=monthly_incomes,
+                      monthly_expenses=monthly_expenses_chart,
+                      years=available_years, selected_year=year, period=period, selected_month=month)
     finally:
         db.close()
