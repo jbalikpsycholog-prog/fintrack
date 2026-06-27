@@ -29,9 +29,6 @@ COLUMN_ALIASES = {
 }
 
 def detect_encoding(raw_bytes: bytes) -> str:
-    """Detekce kodovani souboru bez externich zavislosti.
-    CS exportuje typicky windows-1250 nebo utf-8-sig.
-    """
     for enc in ("utf-8-sig", "utf-8", "windows-1250", "iso-8859-2", "latin-1"):
         try:
             raw_bytes.decode(enc)
@@ -41,7 +38,6 @@ def detect_encoding(raw_bytes: bytes) -> str:
     return "utf-8"
 
 def find_column(headers: List[str], field: str) -> Optional[int]:
-    """Najde index sloupce podle aliasu."""
     aliases = COLUMN_ALIASES.get(field, [])
     for alias in aliases:
         for i, h in enumerate(headers):
@@ -54,18 +50,24 @@ def find_column(headers: List[str], field: str) -> Optional[int]:
     return None
 
 def parse_amount(value: str) -> float:
-    """Prevede textovou castku na float."""
     if not value:
         return 0.0
-    v = value.strip().replace("\xa0", "").replace("\u00a0", "").replace("\u202f", "").replace(" ", "")
+    # Odstraneni mezer, nezlomitelnych mezer, tenkych mezer
+    v = value.strip()
+    for ch in ("\xa0", "\u00a0", "\u202f", "\u2009", " "):
+        v = v.replace(ch, "")
+    # Nahrazeni carky desetinnou teckou
     v = v.replace(",", ".")
+    # Pokud je vice tecek, ponech jen posledni jako desetinnou
+    parts = v.split(".")
+    if len(parts) > 2:
+        v = "".join(parts[:-1]) + "." + parts[-1]
     try:
         return float(v)
     except ValueError:
         return 0.0
 
 def parse_date(value: str) -> Optional[str]:
-    """Prevede datum z ruznych formatu CS na ISO 8601 (YYYY-MM-DD)."""
     if not value:
         return None
     value = value.strip()
@@ -76,6 +78,76 @@ def parse_date(value: str) -> Optional[str]:
             continue
     return value
 
+def _try_parse(text: str, delimiter: str) -> List[Dict]:
+    """Pokusi se parsovat CSV s danym oddelovacem."""
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    rows = list(reader)
+
+    if not rows:
+        return []
+
+    # Najdi radek s hlavickami
+    header_row_idx = None
+    for i, row in enumerate(rows):
+        if not row:
+            continue
+        row_joined = " ".join(c.strip() for c in row).lower()
+        # Hledej typicke hlavicky CS vypisu
+        if any(kw in row_joined for kw in ["datum", "castka", "\u010d\u00e1stka", "amount", "objem"]):
+            header_row_idx = i
+            break
+
+    if header_row_idx is None:
+        return []
+
+    headers = [h.strip() for h in rows[header_row_idx]]
+
+    # Mapovani sloupcu
+    col_map = {}
+    for field in COLUMN_ALIASES:
+        idx = find_column(headers, field)
+        if idx is not None:
+            col_map[field] = idx
+
+    # Pokud chybi datum nebo castka, zkus znovu bez aliasu - vezmi prvni radek s vice sloupci
+    if "datum" not in col_map or "castka" not in col_map:
+        return []
+
+    transactions = []
+    for row in rows[header_row_idx + 1:]:
+        if not row or all(c.strip() == "" for c in row):
+            continue
+        try:
+            datum_raw = row[col_map["datum"]].strip() if col_map.get("datum") is not None and col_map["datum"] < len(row) else ""
+            castka_raw = row[col_map["castka"]].strip() if col_map.get("castka") is not None and col_map["castka"] < len(row) else ""
+
+            datum = parse_date(datum_raw)
+            castka = parse_amount(castka_raw)
+
+            if not datum or castka == 0.0:
+                continue
+
+            transaction = {
+                "datum": datum,
+                "castka": castka,
+                "mena": row[col_map["mena"]].strip() if col_map.get("mena") is not None and col_map["mena"] < len(row) else "CZK",
+                "protiucet": row[col_map["protiucet"]].strip() if col_map.get("protiucet") is not None and col_map["protiucet"] < len(row) else "",
+                "nazev_protiuctu": row[col_map["nazev_protiuctu"]].strip() if col_map.get("nazev_protiuctu") is not None and col_map["nazev_protiuctu"] < len(row) else "",
+                "kod_banky": row[col_map["kod_banky"]].strip() if col_map.get("kod_banky") is not None and col_map["kod_banky"] < len(row) else "",
+                "variabilni": row[col_map["variabilni"]].strip() if col_map.get("variabilni") is not None and col_map["variabilni"] < len(row) else "",
+                "konstantni": row[col_map["konstantni"]].strip() if col_map.get("konstantni") is not None and col_map["konstantni"] < len(row) else "",
+                "specificke": row[col_map["specificke"]].strip() if col_map.get("specificke") is not None and col_map["specificke"] < len(row) else "",
+                "popis": row[col_map["popis"]].strip() if col_map.get("popis") is not None and col_map["popis"] < len(row) else "",
+                "id_transakce": row[col_map["id_transakce"]].strip() if col_map.get("id_transakce") is not None and col_map["id_transakce"] < len(row) else "",
+                "typ": row[col_map["typ"]].strip() if col_map.get("typ") is not None and col_map["typ"] < len(row) else "",
+            }
+            transactions.append(transaction)
+        except (IndexError, ValueError):
+            continue
+
+    return transactions
+
+
 def parse_cs_csv(raw_bytes: bytes) -> List[Dict]:
     """Parsuje CSV export z Ceske sporitelny."""
     encoding = detect_encoding(raw_bytes)
@@ -83,82 +155,13 @@ def parse_cs_csv(raw_bytes: bytes) -> List[Dict]:
     if text.startswith("\ufeff"):
         text = text[1:]
 
-    transactions = []
-
+    # Zkus oddelovace v poradi: strednik, carka, tabulator
     for delimiter in (";", ",", "\t"):
         try:
-            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-            rows = list(reader)
-
-            if not rows:
-                continue
-
-            header_row_idx = None
-            for i, row in enumerate(rows):
-                if row and any(
-                    any(alias.lower() in cell.strip().lower() for alias in aliases)
-                    for field, aliases in COLUMN_ALIASES.items()
-                    for cell in row
-                ):
-                    header_row_idx = i
-                    break
-
-            if header_row_idx is None:
-                for i, row in enumerate(rows):
-                    if row and len(row) > 1:
-                        header_row_idx = i
-                        break
-
-            if header_row_idx is None:
-                continue
-
-            headers = rows[header_row_idx]
-
-            col_map = {}
-            for field in COLUMN_ALIASES:
-                idx = find_column(headers, field)
-                if idx is not None:
-                    col_map[field] = idx
-
-            if "datum" not in col_map or "castka" not in col_map:
-                continue
-
-            for row in rows[header_row_idx + 1:]:
-                if not row or all(cell.strip() == "" for cell in row):
-                    continue
-
-                try:
-                    datum_raw = row[col_map["datum"]] if "datum" in col_map and col_map["datum"] < len(row) else ""
-                    castka_raw = row[col_map["castka"]] if "castka" in col_map and col_map["castka"] < len(row) else ""
-
-                    datum = parse_date(datum_raw)
-                    castka = parse_amount(castka_raw)
-
-                    transaction = {
-                        "datum": datum,
-                        "castka": castka,
-                        "mena": row[col_map["mena"]].strip() if "mena" in col_map and col_map["mena"] < len(row) else "CZK",
-                        "protiucet": row[col_map["protiucet"]].strip() if "protiucet" in col_map and col_map["protiucet"] < len(row) else "",
-                        "nazev_protiuctu": row[col_map["nazev_protiuctu"]].strip() if "nazev_protiuctu" in col_map and col_map["nazev_protiuctu"] < len(row) else "",
-                        "kod_banky": row[col_map["kod_banky"]].strip() if "kod_banky" in col_map and col_map["kod_banky"] < len(row) else "",
-                        "variabilni": row[col_map["variabilni"]].strip() if "variabilni" in col_map and col_map["variabilni"] < len(row) else "",
-                        "konstantni": row[col_map["konstantni"]].strip() if "konstantni" in col_map and col_map["konstantni"] < len(row) else "",
-                        "specificke": row[col_map["specificke"]].strip() if "specificke" in col_map and col_map["specificke"] < len(row) else "",
-                        "popis": row[col_map["popis"]].strip() if "popis" in col_map and col_map["popis"] < len(row) else "",
-                        "id_transakce": row[col_map["id_transakce"]].strip() if "id_transakce" in col_map and col_map["id_transakce"] < len(row) else "",
-                        "typ": row[col_map["typ"]].strip() if "typ" in col_map and col_map["typ"] < len(row) else "",
-                    }
-
-                    if datum and castka != 0.0:
-                        transactions.append(transaction)
-
-                except (IndexError, ValueError):
-                    continue
-
-            if transactions:
-                return transactions
-
+            result = _try_parse(text, delimiter)
+            if result:
+                return result
         except csv.Error:
             continue
 
-    return transactions
+    return []
