@@ -28,14 +28,22 @@ COLUMN_ALIASES = {
     "typ": ["Typ transakce", "typ", "transaction_type", "Typ"],
 }
 
-def detect_encoding(raw_bytes: bytes) -> str:
+def decode_bytes(raw_bytes: bytes) -> str:
+    """Dekoduje bajty do textu - podporuje UTF-16, UTF-8 i Windows-1250."""
+    # Detekce UTF-16 podle BOM
+    if raw_bytes[:2] == b'\xff\xfe':
+        # UTF-16 Little Endian
+        return raw_bytes.decode('utf-16-le', errors='replace').lstrip('\ufeff')
+    if raw_bytes[:2] == b'\xfe\xff':
+        # UTF-16 Big Endian
+        return raw_bytes.decode('utf-16-be', errors='replace').lstrip('\ufeff')
+    # Ostatni kodovani
     for enc in ("utf-8-sig", "utf-8", "windows-1250", "iso-8859-2", "latin-1"):
         try:
-            raw_bytes.decode(enc)
-            return enc
+            return raw_bytes.decode(enc)
         except (UnicodeDecodeError, LookupError):
             continue
-    return "utf-8"
+    return raw_bytes.decode("utf-8", errors="replace")
 
 def find_column(headers: List[str], field: str) -> Optional[int]:
     aliases = COLUMN_ALIASES.get(field, [])
@@ -52,13 +60,10 @@ def find_column(headers: List[str], field: str) -> Optional[int]:
 def parse_amount(value: str) -> float:
     if not value:
         return 0.0
-    # Odstraneni mezer, nezlomitelnych mezer, tenkych mezer
     v = value.strip()
-    for ch in ("\xa0", "\u00a0", "\u202f", "\u2009", " "):
+    for ch in ("\xa0", "\u00a0", "\u202f", "\u2009", "\u00a0", " "):
         v = v.replace(ch, "")
-    # Nahrazeni carky desetinnou teckou
     v = v.replace(",", ".")
-    # Pokud je vice tecek, ponech jen posledni jako desetinnou
     parts = v.split(".")
     if len(parts) > 2:
         v = "".join(parts[:-1]) + "." + parts[-1]
@@ -79,21 +84,18 @@ def parse_date(value: str) -> Optional[str]:
     return value
 
 def _try_parse(text: str, delimiter: str) -> List[Dict]:
-    """Pokusi se parsovat CSV s danym oddelovacem."""
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     rows = list(reader)
 
     if not rows:
         return []
 
-    # Najdi radek s hlavickami
     header_row_idx = None
     for i, row in enumerate(rows):
         if not row:
             continue
         row_joined = " ".join(c.strip() for c in row).lower()
-        # Hledej typicke hlavicky CS vypisu
-        if any(kw in row_joined for kw in ["datum", "castka", "\u010d\u00e1stka", "amount", "objem"]):
+        if any(kw in row_joined for kw in ["datum", "castka", "částka", "amount", "objem"]):
             header_row_idx = i
             break
 
@@ -102,14 +104,12 @@ def _try_parse(text: str, delimiter: str) -> List[Dict]:
 
     headers = [h.strip() for h in rows[header_row_idx]]
 
-    # Mapovani sloupcu
     col_map = {}
     for field in COLUMN_ALIASES:
         idx = find_column(headers, field)
         if idx is not None:
             col_map[field] = idx
 
-    # Pokud chybi datum nebo castka, zkus znovu bez aliasu - vezmi prvni radek s vice sloupci
     if "datum" not in col_map or "castka" not in col_map:
         return []
 
@@ -149,13 +149,12 @@ def _try_parse(text: str, delimiter: str) -> List[Dict]:
 
 
 def parse_cs_csv(raw_bytes: bytes) -> List[Dict]:
-    """Parsuje CSV export z Ceske sporitelny."""
-    encoding = detect_encoding(raw_bytes)
-    text = raw_bytes.decode(encoding, errors="replace")
-    if text.startswith("\ufeff"):
-        text = text[1:]
+    """Parsuje CSV export z Ceske sporitelny vcetne UTF-16 kodovani."""
+    text = decode_bytes(raw_bytes)
 
-    # Zkus oddelovace v poradi: strednik, carka, tabulator
+    # Odstraneni BOM znaku pokud zbyly
+    text = text.lstrip('\ufeff')
+
     for delimiter in (";", ",", "\t"):
         try:
             result = _try_parse(text, delimiter)
