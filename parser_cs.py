@@ -30,14 +30,10 @@ COLUMN_ALIASES = {
 
 def decode_bytes(raw_bytes: bytes) -> str:
     """Dekoduje bajty do textu - podporuje UTF-16, UTF-8 i Windows-1250."""
-    # Detekce UTF-16 podle BOM
     if raw_bytes[:2] == b'\xff\xfe':
-        # UTF-16 Little Endian
-        return raw_bytes.decode('utf-16-le', errors='replace').lstrip('\ufeff')
+        return raw_bytes[2:].decode('utf-16-le', errors='replace')
     if raw_bytes[:2] == b'\xfe\xff':
-        # UTF-16 Big Endian
-        return raw_bytes.decode('utf-16-be', errors='replace').lstrip('\ufeff')
-    # Ostatni kodovani
+        return raw_bytes[2:].decode('utf-16-be', errors='replace')
     for enc in ("utf-8-sig", "utf-8", "windows-1250", "iso-8859-2", "latin-1"):
         try:
             return raw_bytes.decode(enc)
@@ -61,7 +57,7 @@ def parse_amount(value: str) -> float:
     if not value:
         return 0.0
     v = value.strip()
-    for ch in ("\xa0", "\u00a0", "\u202f", "\u2009", "\u00a0", " "):
+    for ch in ("\xa0", "\u00a0", "\u202f", "\u2009", " "):
         v = v.replace(ch, "")
     v = v.replace(",", ".")
     parts = v.split(".")
@@ -83,6 +79,17 @@ def parse_date(value: str) -> Optional[str]:
             continue
     return value
 
+def _find_header_row(rows: list) -> Optional[int]:
+    """Najde radek s hlavickami - zkusi find_column na kazdem radku."""
+    for i, row in enumerate(rows[:10]):
+        if not row or len(row) < 3:
+            continue
+        headers = [h.strip() for h in row]
+        # Pokud najdeme sloupec datum i castka, je to hlavicka
+        if find_column(headers, "datum") is not None and find_column(headers, "castka") is not None:
+            return i
+    return None
+
 def _try_parse(text: str, delimiter: str) -> List[Dict]:
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     rows = list(reader)
@@ -90,14 +97,7 @@ def _try_parse(text: str, delimiter: str) -> List[Dict]:
     if not rows:
         return []
 
-    header_row_idx = None
-    for i, row in enumerate(rows):
-        if not row:
-            continue
-        row_joined = " ".join(c.strip() for c in row).lower()
-        if any(kw in row_joined for kw in ["datum", "castka", "částka", "amount", "objem"]):
-            header_row_idx = i
-            break
+    header_row_idx = _find_header_row(rows)
 
     if header_row_idx is None:
         return []
@@ -151,8 +151,6 @@ def _try_parse(text: str, delimiter: str) -> List[Dict]:
 def parse_cs_csv(raw_bytes: bytes) -> List[Dict]:
     """Parsuje CSV export z Ceske sporitelny vcetne UTF-16 kodovani."""
     text = decode_bytes(raw_bytes)
-
-    # Odstraneni BOM znaku pokud zbyly
     text = text.lstrip('\ufeff')
 
     for delimiter in (";", ",", "\t"):
