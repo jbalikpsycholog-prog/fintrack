@@ -13,13 +13,13 @@ from parser_cs import parse_cs_csv
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="FinTrack OSVÄ")
+app = FastAPI(title="FinTrack OSVÃÂ")
 
 jinja_env = Environment(
-            loader=FileSystemLoader("templates"),
-            autoescape=select_autoescape(["html"]),
-            auto_reload=True,
-            cache_size=0,
+    loader=FileSystemLoader("templates"),
+    autoescape=select_autoescape(["html"]),
+    auto_reload=True,
+    cache_size=0,
 )
 
 def render(template_name: str, **ctx) -> HTMLResponse:
@@ -27,20 +27,20 @@ def render(template_name: str, **ctx) -> HTMLResponse:
     return HTMLResponse(t.render(**ctx))
 
 DEFAULT_CATEGORIES = [
-            "SOFTWARE", "HARDWARE", "PRONAJEM", "TEL/INTERNET", "TESTY",
-            "DROB.ADMIN", "DROB.OST.", "FIN.SLUZBY", "VOZIDLO", "PEREX", "PRIJMY"
+    "SOFTWARE", "HARDWARE", "PRONAJEM", "TEL/INTERNET", "TESTY",
+    "DROB.ADMIN", "DROB.OST.", "FIN.SLUZBY", "VOZIDLO", "PEREX", "PRIJMY"
 ]
 
 def init_default_categories(db: Session):
     for name in DEFAULT_CATEGORIES:
         if not db.query(Category).filter(Category.name == name).first():
             db.add(Category(name=name, is_active=True))
-            db.commit()
+        db.commit()
 
-        def cat_name(db, cat_id):
-            if not cat_id:
-                return None
-                c = db.query(Category).filter(Category.id == cat_id).first()
+def cat_name(db, cat_id):
+    if not cat_id:
+        return None
+    c = db.query(Category).filter(Category.id == cat_id).first()
     return c.name if c else None
 
 
@@ -65,7 +65,7 @@ async def dashboard(request: Request):
             Transaction.excluded == False).all() if not t.is_income)
             if s > 0:
                 cat_expenses.append({"name": c.name, "total": s})
-                recent = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).limit(5).all()
+        recent = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).limit(5).all()
         recent_list = [{"filename": r.filename, "month": r.month, "year": r.year,
         "count": r.transaction_count,
         "imported_at": r.imported_at.strftime("%d.%m.%Y %H:%M") if r.imported_at else ""}
@@ -100,9 +100,9 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
         try:
             transactions_data = parse_cs_csv(raw)
         except Exception as e:
-            return render("import.html", imports=[], message=None, error=f"Chyba parsovÃ¡nÃ­: {e}")
+            return render("import.html", imports=[], message=None, error=f"Chyba parsovÃÂ¡nÃÂ­: {e}")
         if not transactions_data:
-            return render("import.html", imports=[], message=None, error="CSV je prÃ¡zdnÃ©.")
+            return render("import.html", imports=[], message=None, error="CSV je prÃÂ¡zdnÃÂ©.")
         first_date = transactions_data[0].get("date", "")
         try:
             d = datetime.strptime(first_date, "%Y-%m-%d")
@@ -144,22 +144,22 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
         "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
         for i in imports]
         return render("import.html", imports=imp_list,
-        message=f"ImportovÃ¡no {len(transactions_data)} transakcÃ­ z {file.filename}.",
+        message=f"ImportovÃÂ¡no {len(transactions_data)} transakcÃÂ­ z {file.filename}.",
         error=None)
-        except Exception as e:
+    except Exception as e:
         db.rollback()
         return render("import.html", imports=[], message=None, error=f"Chyba: {e}")
-        finally:
+    finally:
         db.close()
 
 
 @app.get("/transactions", response_class=HTMLResponse)
 async def transactions_page(
-            request: Request,
-            t_type: Optional[str] = None,
-            search: Optional[str] = None,
-            month: Optional[str] = None,
-            page: int = 1,
+    request: Request,
+    t_type: Optional[str] = None,
+    search: Optional[str] = None,
+    month: Optional[str] = None,
+    page: int = 1,
 ):
     db = SessionLocal()
     try:
@@ -168,9 +168,9 @@ async def transactions_page(
             q = q.filter(Transaction.category_id == None, Transaction.excluded == False)
         elif t_type == "income":
             q = q.filter(Transaction.is_income == True, Transaction.excluded == False)
-elif t_type == "expense":
+        elif t_type == "expense":
             q = q.filter(Transaction.is_income == False, Transaction.excluded == False)
-elif t_type == "excluded":
+        elif t_type == "excluded":
             q = q.filter(Transaction.excluded == True)
         if search:
             q = q.filter(
@@ -181,7 +181,7 @@ elif t_type == "excluded":
             try:
                 parts = month.split("-")
                 q = q.filter(Transaction.year == int(parts[0]), Transaction.month == int(parts[1]))
-                except Exception:
+            except Exception:
                 pass
         q = q.order_by(Transaction.date.desc())
         total_count = q.count()
@@ -210,7 +210,7 @@ elif t_type == "excluded":
         current_filter=t_type, search=search or "",
         months=months_list, selected_month=month or "",
         page=page, total_pages=total_pages, total_count=total_count, msg=None)
-        finally:
+    finally:
         db.close()
 
 @app.post("/transactions/{t_id}/categorize")
@@ -226,7 +226,7 @@ async def categorize_transaction(t_id: int, category: str = Form("")):
         elif category == "":
             t.category_id = None
             t.excluded = False
-else:
+        else:
             c = db.query(Category).filter(Category.name == category).first()
             if c:
                 t.category_id = c.id
@@ -319,10 +319,10 @@ async def delete_budget(bud_id: int):
 
 @app.get("/reports", response_class=HTMLResponse)
 async def reports_page(
-            request: Request,
-            year: Optional[int] = None,
-            period: Optional[str] = "month",
-            month: Optional[int] = None,
+    request: Request,
+    year: Optional[int] = None,
+    period: Optional[str] = "month",
+    month: Optional[int] = None,
 ):
     db = SessionLocal()
     try:
@@ -337,7 +337,7 @@ async def reports_page(
         elif period == "quarter":
             qs = ((month - 1) // 3) * 3 + 1
             q = q.filter(Transaction.month >= qs, Transaction.month <= qs + 2)
-elif period == "half":
+        elif period == "half":
             hs = 1 if month <= 6 else 7
             q = q.filter(Transaction.month >= hs, Transaction.month <= hs + 5)
         txns = q.all()
