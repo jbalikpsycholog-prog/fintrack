@@ -1,24 +1,34 @@
 @echo off
-chcp 65001 >nul
 echo ============================================
 echo  FinTrack OSVC - Spusteni aplikace
 echo ============================================
 echo.
 
-REM Kontrola Pythonu
+REM Kontrola Pythonu (zkusi python i py)
 python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [CHYBA] Python neni nainstalovan.
-    echo Stahni ho z: https://www.python.org/downloads/
-    echo Pri instalaci zaskrtni "Add Python to PATH"!
-    pause
-    exit /b 1
+if %errorlevel% equ 0 (
+    set PYTHON=python
+    goto python_ok
+)
+py --version >nul 2>&1
+if %errorlevel% equ 0 (
+    set PYTHON=py
+    goto python_ok
 )
 
-REM Vytvoreni virtualniho prostredi (jen poprvé - pri prvnim spusteni)
+echo [CHYBA] Python neni nainstalovan nebo neni v PATH.
+echo Stahni ho z: https://www.python.org/downloads/
+echo Po instalaci RESTARTUJ pocitac a zkus znovu.
+pause
+exit /b 1
+
+:python_ok
+echo Python nalezen: %PYTHON%
+
+REM Vytvoreni virtualniho prostredi (jen poprve)
 if not exist ".venv" (
-    echo Vytvarim virtualni prostredi (jen jednou)...
-    python -m venv .venv
+    echo Vytvarim virtualni prostredi...
+    %PYTHON% -m venv .venv
 )
 
 REM Aktivace virtualniho prostredi
@@ -54,6 +64,6 @@ REM Otevri prohlizec
 start http://localhost:8000
 
 REM Spust server
-python -m uvicorn main:app --host 127.0.0.1 --port 8000
+%PYTHON% -m uvicorn main:app --host 127.0.0.1 --port 8000
 
 pause
