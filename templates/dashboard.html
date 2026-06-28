@@ -97,7 +97,7 @@
         <td class="py-2 text-gray-700">{{ imp.filename }}</td>
         <td class="py-2 text-gray-500">{{ imp.month }}/{{ imp.year }}</td>
         <td class="py-2 text-gray-700">{{ imp.transaction_count }}</td>
-        <td class="py-2 text-gray-400 text-xs">{{ imp.imported_at.strftime('%d.%m.%Y %H:%M') if imp.imported_at else '' }}</td>
+        <td class="py-2 text-gray-400 text-xs">{{ imp.imported_at }}</td>
       </tr>
       {% endfor %}
     </tbody>
