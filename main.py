@@ -158,6 +158,21 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
         db.close()
 
 
+
+@app.post("/import/delete/{batch_id}")
+async def delete_import_batch(batch_id: int):
+    db = SessionLocal()
+    try:
+        batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
+        if batch:
+            # Smazat vsechny transakce z tohoto importu
+            db.query(Transaction).filter(Transaction.import_batch_id == batch_id).delete()
+            db.delete(batch)
+            db.commit()
+        return RedirectResponse(url="/import", status_code=303)
+    finally:
+        db.close()
+
 @app.get("/transactions", response_class=HTMLResponse)
 async def transactions_page(
     request: Request,
