@@ -89,3 +89,20 @@ class Budget(Base):
     amount = Column(Float, default=0.0)
 
     category = relationship("Category", back_populates="budgets")
+
+
+def run_migrations():
+        import sqlite3
+        db_path = DATABASE_URL.replace("sqlite:///", "")
+        try:
+                    conn = sqlite3.connect(db_path)
+                    cur = conn.cursor()
+                    cols = [row[1] for row in cur.execute("PRAGMA table_info(import_batches)")]
+                    if "period_label" not in cols:
+                                    cur.execute("ALTER TABLE import_batches ADD COLUMN period_label TEXT")
+                                    conn.commit()
+                                    conn.close()
+    except Exception:
+        pass
+
+run_migrations()
