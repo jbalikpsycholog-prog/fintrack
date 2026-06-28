@@ -18,7 +18,7 @@ class ImportBatch(Base):
     month = Column(Integer, nullable=False)
     imported_at = Column(DateTime, default=datetime.now)
     transaction_count = Column(Integer, default=0)
-
+    period_label = Column(String, nullable=True)
     transactions = relationship("Transaction", back_populates="import_batch")
 
 
