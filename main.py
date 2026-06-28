@@ -89,6 +89,7 @@ async def import_page(request: Request):
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
         imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
                      "count": i.transaction_count,
+                     "period_label": i.period_label or "",
                      "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
                     for i in imports]
         return render("import.html", imports=imp_list, message=None, error=None)
@@ -97,7 +98,7 @@ async def import_page(request: Request):
 
 
 @app.post("/import", response_class=HTMLResponse)
-async def import_csv(request: Request, file: UploadFile = File(...)):
+async def import_csv(request: Request, file: UploadFile = File(...), period_label: str = Form(...)):
     db = SessionLocal()
     try:
         init_default_categories(db)
@@ -115,7 +116,7 @@ async def import_csv(request: Request, file: UploadFile = File(...)):
         except Exception:
             iy, im = datetime.now().year, datetime.now().month
         batch = ImportBatch(filename=file.filename, month=im, year=iy,
-                            transaction_count=len(transactions_data), imported_at=datetime.now())
+                            transaction_count=len(transactions_data), imported_at=datetime.now(), period_label=period_label)
         db.add(batch)
         db.flush()
         rules = db.query(ClassificationRule).all()
