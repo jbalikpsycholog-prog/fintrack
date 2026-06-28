@@ -102,7 +102,7 @@ def run_migrations():
                                     cur.execute("ALTER TABLE import_batches ADD COLUMN period_label TEXT")
                                     conn.commit()
                                     conn.close()
-    except Exception:
-        pass
+        except Exception:
+            pass
 
 run_migrations()
