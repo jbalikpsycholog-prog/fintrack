@@ -109,7 +109,7 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
             return render("import.html", imports=[], message=None, error=f"Chyba parsovani: {e}")
         if not transactions_data:
             return render("import.html", imports=[], message=None, error="CSV je prazdne.")
-        first_date = transactions_data[0].get("date", "")
+        first_date = transactions_data[0].get("datum", "")
         try:
             d = datetime.strptime(first_date, "%Y-%m-%d")
             iy, im = d.year, d.month
@@ -121,26 +121,26 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
         db.flush()
         rules = db.query(ClassificationRule).all()
         for td in transactions_data:
-            amount = float(td.get("amount", 0))
+            amount = float(td.get("castka", 0))
             is_inc = amount > 0
             cat_id = None
-            desc = (td.get("description") or "").upper()
-            cp = (td.get("counterparty") or "").upper()
+            desc = (td.get("popis") or "").upper()
+            cp = (td.get("nazev_protiuctu") or "").upper()
             for rule in rules:
                 kw = (rule.description_contains or "").upper()
                 if kw and (kw in desc or kw in cp):
                     cat_id = rule.category_id
                     break
             t = Transaction(
-                date=td.get("date"), year=iy, month=im,
-                description=td.get("description", ""),
-                counterparty_name=td.get("counterparty", ""),
+                date=td.get("datum"), year=iy, month=im,
+                description=td.get("popis", ""),
+                counterparty_name=td.get("nazev_protiuctu", ""),
                 amount=amount, is_income=is_inc,
                 category_id=cat_id, excluded=False,
                 import_batch_id=batch.id,
-                variable_symbol=td.get("variable_symbol", ""),
-                specific_symbol=td.get("specific_symbol", ""),
-                constant_symbol=td.get("constant_symbol", ""),
+                variable_symbol=td.get("variabilni", ""),
+                specific_symbol=td.get("specificke", ""),
+                constant_symbol=td.get("konstantni", ""),
             )
             db.add(t)
         db.commit()
