@@ -65,10 +65,10 @@
     <div class="grid grid-cols-2 gap-4">
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Kategorie</label>
-        <select name="category" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <select name="category" id="category-select" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" onchange="onCategorySelectNew(this)">
           <option value="">– kategorie –</option>
           {% for c in categories %}
-          <option value="{{ c.name }}">{{ c.name }}</option>
+          <option value="{{ c.name }}" data-type="{{ c.category_type }}" data-relevant="{{ '1' if c.default_tax_relevant else '0' }}">{{ c.name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -81,7 +81,7 @@
 
     <div>
       <label class="flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="tax_relevant" value="1" checked>
+        <input type="checkbox" id="tax_relevant_cb" name="tax_relevant" value="1" checked>
         Daňově relevantní
       </label>
     </div>
@@ -133,4 +133,32 @@
   <p class="text-slate-400 text-sm">Zatím žádné ruční transakce.</p>
   {% endif %}
 </div>
+
+<script>
+function filterCategoriesByDirection() {
+  var checked = document.querySelector('input[name="direction"]:checked');
+  if (!checked) return;
+  var direction = checked.value;
+  var select = document.getElementById('category-select');
+  var options = select.querySelectorAll('option[data-type]');
+  options.forEach(function (o) {
+    o.hidden = (o.getAttribute('data-type') !== direction);
+  });
+  var selectedOpt = select.options[select.selectedIndex];
+  if (selectedOpt && selectedOpt.hidden) {
+    select.value = "";
+  }
+}
+document.querySelectorAll('input[name="direction"]').forEach(function (r) {
+  r.addEventListener('change', filterCategoriesByDirection);
+});
+filterCategoriesByDirection();
+
+function onCategorySelectNew(sel) {
+  var opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  var cb = document.getElementById('tax_relevant_cb');
+  if (cb) cb.checked = (opt.getAttribute('data-relevant') === '1');
+}
+</script>
 {% endblock %}

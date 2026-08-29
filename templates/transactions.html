@@ -67,14 +67,16 @@
         </td>
         <td class="px-4 py-3" onclick="event.stopPropagation();">
           <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center flex-wrap">
-            <select name="category" class="border rounded px-2 py-1 text-xs bg-white">
+            <select name="category" class="border rounded px-2 py-1 text-xs bg-white" onchange="onCategorySelect(this, 'relevant-{{ t.id }}')">
               <option value="">– kategorie –</option>
               {% for c in categories %}
-              <option value="{{ c.name }}" {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>
+              <option value="{{ c.name }}" data-relevant="{{ '1' if c.default_tax_relevant else '0' }}"
+                {% if c.name == t.category %}selected{% endif %}
+                {% if c.category_type != ('income' if t.is_income else 'expense') and c.name != t.category %}hidden{% endif %}>{{ c.name }}</option>
               {% endfor %}
             </select>
             <label class="flex items-center gap-1 text-[11px] text-slate-500 whitespace-nowrap">
-              <input type="checkbox" name="tax_relevant" value="1" {% if t.tax_relevant %}checked{% endif %}>
+              <input type="checkbox" id="relevant-{{ t.id }}" name="tax_relevant" value="1" {% if t.tax_relevant %}checked{% endif %}>
               daň. relevantní
             </label>
             <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">OK</button>
@@ -150,4 +152,13 @@
 <div class="mt-4 text-sm text-slate-500">
   Celkem: {{ total_count }} transakcí
 </div>
+
+<script>
+function onCategorySelect(sel, checkboxId) {
+  var opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  var cb = document.getElementById(checkboxId);
+  if (cb) cb.checked = (opt.getAttribute('data-relevant') === '1');
+}
+</script>
 {% endblock %}
