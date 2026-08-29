@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Transakce – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5 flex items-center justify-between flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-800">
+      {% if current_filter == 'unclassified' %}Nezařazené položky
+      {% elif current_filter == 'excluded' %}Vyloučené položky
+      {% elif current_filter == 'income' %}Příjmy
+      {% elif current_filter == 'expense' %}Výdaje
+      {% else %}Všechny transakce
+      {% endif %}
+    </h1>
+  </div>
+  <div class="flex gap-2 flex-wrap">
+    <a href="/transactions" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if not current_filter %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vše</a>
+    <a href="/transactions?t_type=unclassified" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'unclassified' %}bg-orange-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Nezařazené</a>
+    <a href="/transactions?t_type=income" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'income' %}bg-green-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Příjmy</a>
+    <a href="/transactions?t_type=expense" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'expense' %}bg-red-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Výdaje</a>
+    <a href="/transactions?t_type=excluded" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'excluded' %}bg-slate-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vyloučené</a>
+  </div>
+</div>
+
+{% if msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">{{ msg }}</div>
+{% endif %}
+
+<form method="get" class="flex gap-2 mb-4 flex-wrap">
+  {% if current_filter %}<input type="hidden" name="t_type" value="{{ current_filter }}">{% endif %}
+  <input type="text" name="search" value="{{ search }}" placeholder="Hledat..." class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-40">
+  <select name="month" class="border rounded-lg px-3 py-2 text-sm bg-white">
+    <option value="">Všechny měsíce</option>
+    {% for m in months %}
+    <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Hledat</button>
+</form>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-100">
+      <tr>
+        <th class="text-left px-4 py-3 text-slate-600 font-medium">Datum</th>
+        <th class="text-left px-4 py-3 text-slate-600 font-medium">Popis</th>
+        <th class="text-left px-4 py-3 text-slate-600 font-medium">Typ</th>
+        <th class="text-left px-4 py-3 text-slate-600 font-medium">Kategorie</th>
+        <th class="text-right px-4 py-3 text-slate-600 font-medium">Částka</th>
+        <th class="text-left px-4 py-3 text-slate-600 font-medium"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in transactions %}
+      {% set msg_text = t.message_for_me or t.message_for_recipient or t.note %}
+      <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="var d=document.getElementById('detail-{{ t.id }}'); d.classList.toggle('hidden'); var i=document.getElementById('arrow-{{ t.id }}'); i.textContent = d.classList.contains('hidden') ? '▸' : '▾';">
+        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ t.date }}</td>
+        <td class="px-4 py-3 text-slate-800">
+          <div class="font-medium">{{ t.counterparty or msg_text or '(bez popisu)' }}</div>
+          {% if msg_text and t.counterparty %}
+          <div class="text-xs text-slate-400">{{ msg_text }}</div>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+          {% if t.transaction_type %}
+          <span class="inline-block bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{{ t.transaction_type }}</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3" onclick="event.stopPropagation();">
+          <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center">
+            <select name="category" class="border rounded px-2 py-1 text-xs bg-white">
+              <option value="">– kategorie –</option>
+              {% for c in categories %}
+              <option value="{{ c.name }}" {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>
+              {% endfor %}
+              <option value="EXCLUDED" {% if t.category == 'EXCLUDED' %}selected{% endif %}>VYLOUČIT</option>
+            </select>
+            <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">OK</button>
+          </form>
+          {% if t.bank_category %}
+          <div class="text-[11px] text-slate-400 mt-1">dle banky: {{ t.bank_category }}</div>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right font-medium whitespace-nowrap {% if t.amount > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+          {{ "%.2f"|format(t.amount) }} {{ t.currency }}
+        </td>
+        <td class="px-4 py-3 text-slate-400 text-xs" id="arrow-{{ t.id }}">▸</td>
+      </tr>
+      <tr id="detail-{{ t.id }}" class="hidden bg-slate-50/70 border-b border-slate-100">
+        <td colspan="6" class="px-4 py-4">
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-xs text-slate-600">
+            <div><span class="text-slate-400">Protistrana:</span> {{ t.counterparty or '—' }}</div>
+            <div><span class="text-slate-400">Číslo účtu / IBAN:</span> {{ t.counterparty_account or t.iban or '—' }}</div>
+            <div><span class="text-slate-400">Banka (BIC):</span> {{ t.bic or t.bank_code or '—' }}</div>
+            <div><span class="text-slate-400">Typ transakce:</span> {{ t.transaction_type or '—' }}</div>
+            <div><span class="text-slate-400">Kategorie dle banky:</span> {{ t.bank_category or '—' }}</div>
+            <div><span class="text-slate-400">ID transakce (banka):</span> {{ t.cs_transaction_id or '—' }}</div>
+            <div><span class="text-slate-400">Variabilní symbol:</span> {{ t.variable_symbol or '—' }}</div>
+            <div><span class="text-slate-400">Konstantní symbol:</span> {{ t.constant_symbol or '—' }}</div>
+            <div><span class="text-slate-400">Specifický symbol:</span> {{ t.specific_symbol or '—' }}</div>
+            {% if t.message_for_me %}<div class="col-span-2 md:col-span-3"><span class="text-slate-400">Zpráva pro mě:</span> {{ t.message_for_me }}</div>{% endif %}
+            {% if t.message_for_recipient %}<div class="col-span-2 md:col-span-3"><span class="text-slate-400">Zpráva pro příjemce:</span> {{ t.message_for_recipient }}</div>{% endif %}
+            {% if t.note %}<div class="col-span-2 md:col-span-3"><span class="text-slate-400">Poznámka:</span> {{ t.note }}</div>{% endif %}
+            {% if t.payer_address %}<div class="col-span-2 md:col-span-3"><span class="text-slate-400">Adresa plátce:</span> {{ t.payer_address }}</div>{% endif %}
+            {% if t.recipient_address %}<div class="col-span-2 md:col-span-3"><span class="text-slate-400">Adresa příjemce:</span> {{ t.recipient_address }}</div>{% endif %}
+            {% if t.card_number %}<div><span class="text-slate-400">Číslo karty:</span> {{ t.card_number }}</div>{% endif %}
+            {% if t.card_location %}<div><span class="text-slate-400">Místo použití karty:</span> {{ t.card_location }}</div>{% endif %}
+            {% if t.payment_reference %}<div><span class="text-slate-400">Reference platby:</span> {{ t.payment_reference }}</div>{% endif %}
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" class="px-4 py-8 text-center text-slate-400">Žádné transakce nenalezeny.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if total_pages > 1 %}
+<div class="flex gap-2 mt-4 justify-center flex-wrap">
+  {% for p in range(1, total_pages + 1) %}
+  <a href="?page={{ p }}{% if current_filter %}&t_type={{ current_filter }}{% endif %}{% if search %}&search={{ search }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}"
+     class="px-3 py-1.5 rounded text-sm {% if p == page %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+    {{ p }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="mt-4 text-sm text-slate-500">
+  Celkem: {{ total_count }} transakcí
+</div>
+{% endblock %}

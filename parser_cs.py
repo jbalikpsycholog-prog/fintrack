@@ -1,32 +1,46 @@
 import csv
 import io
+import json
 from datetime import datetime
 from typing import List, Dict, Optional
 
-# Mozne nazvy sloupcu v CSV Ceske sporitelny
+# Mozne nazvy sloupcu v CSV Ceske sporitelny.
+# Poradi aliasu je dulezite: presny nazev sloupce z aktualniho exportu CS
+# je vzdy na prvnim miste, aby nedoslo k zamene s podobne pojmenovanym polem
+# (napr. "BIC" vs "Bankovni kod protiuctu").
 COLUMN_ALIASES = {
-    "datum": ["Datum", "datum", "Datum transakce", "Datum pohybu", "Datum uhrady", "date",
-              "Datum zaúčtování", "Datum zauctovani", "Datum účtování", "Datum uctovani"],
-    "castka": ["Castka", "castka", "Castka v mene uctu", "Objem", "amount",
-               "Částka", "Castka v měně účtu", "Částka v měně účtu"],
-    "mena": ["Mena", "mena", "Mena uctu", "currency", "Měna", "Měna účtu"],
-    "protiucet": ["Protiucet", "protiucet", "Cislo protiuctu", "counterparty_account",
-                  "Protiúčet", "Číslo protiúčtu"],
-    "nazev_protiuctu": ["Nazev protiuctu", "nazev_protiuctu", "Nazev uctu prijemce", "Nazev prijemce", "counterparty_name",
-                        "Název protiúčtu", "Název účtu příjemce", "Název příjemce"],
-    "kod_banky": ["Kod banky", "kod_banky", "BIC", "bank_code",
-                  "Bankovní kód protiúčtu", "Bankovni kod protiuctu"],
-    "variabilni": ["Variabilni symbol", "variabilni", "VS", "variable_symbol",
-                   "Variabilní symbol"],
-    "konstantni": ["Konstantni symbol", "konstantni", "KS", "constant_symbol",
-                   "Konstantní symbol"],
-    "specificke": ["Specificky symbol", "specificke", "SS", "specific_symbol",
-                   "Specifický symbol"],
-    "popis": ["Popis", "popis", "Poznamka", "Zprava", "Note", "description", "Zprava pro prijemce",
-              "Zpráva pro příjemce", "Zpráva pro mě", "Zprava pro me", "Poznámka"],
-    "id_transakce": ["ID transakce", "id_transakce", "Identifikace transakce", "transaction_id", "Cislo pohybu"],
+    "datum": ["Datum zaúčtování", "Datum zauctovani", "Datum", "datum", "Datum transakce",
+              "Datum pohybu", "Datum uhrady", "date", "Datum účtování", "Datum uctovani"],
+    "castka": ["Částka", "Castka", "castka", "Castka v mene uctu", "Objem", "amount",
+               "Castka v měně účtu", "Částka v měně účtu"],
+    "mena": ["Měna", "Mena", "mena", "Mena uctu", "currency", "Měna účtu"],
+    "protiucet": ["Protiúčet", "Protiucet", "protiucet", "Cislo protiuctu", "counterparty_account",
+                  "Číslo protiúčtu"],
+    "nazev_protiuctu": ["Název protiúčtu", "Nazev protiuctu", "nazev_protiuctu", "Nazev uctu prijemce",
+                        "Nazev prijemce", "counterparty_name", "Název účtu příjemce", "Název příjemce"],
+    "iban": ["IBAN", "iban"],
+    "bic": ["BIC", "bic", "SWIFT"],
+    "kod_banky": ["Bankovní kód protiúčtu", "Bankovni kod protiuctu", "Kod banky", "kod_banky", "bank_code"],
+    "variabilni": ["Variabilní symbol", "Variabilni symbol", "variabilni", "VS", "variable_symbol"],
+    "konstantni": ["Konstantní symbol", "Konstantni symbol", "konstantni", "KS", "constant_symbol"],
+    "specificke": ["Specifický symbol", "Specificky symbol", "specificke", "SS", "specific_symbol"],
     "typ": ["Typ transakce", "typ", "transaction_type", "Typ"],
+    "zprava_pro_me": ["Zpráva pro mě", "Zprava pro me", "zprava_pro_me"],
+    "adresa_platce": ["Adresa plátce", "Adresa platce", "adresa_platce"],
+    "zprava_pro_prijemce": ["Zpráva pro příjemce", "Zprava pro prijemce", "zprava_pro_prijemce"],
+    "adresa_prijemce": ["Adresa příjemce", "Adresa prijemce", "adresa_prijemce"],
+    "poznamka": ["Poznámka", "Poznamka", "poznamka", "Note"],
+    "kategorie_banky": ["Kategorie", "kategorie", "category"],
+    "id_transakce": ["ID transakce", "id_transakce", "Identifikace transakce", "transaction_id", "Cislo pohybu"],
+    "cislo_karty": ["Číslo karty", "Cislo karty", "cislo_karty"],
+    "misto_karty": ["Místo použití karty", "Misto pouziti karty", "misto_karty"],
+    "reference_platby": ["Reference platby", "reference_platby"],
+    "nazev_uctu_vlastnika": ["Název účtu vlastníka", "Nazev uctu vlastnika", "nazev_uctu_vlastnika"],
+    "cislo_uctu_vlastnika": ["Číslo účtu vlastníka", "Cislo uctu vlastnika", "cislo_uctu_vlastnika"],
+    # zbylá pole exportu CS, která nemapujeme na vlastní sloupec, ale chceme je
+    # zachovat v "raw" kopii radku pro pripad potreby (viz _row_to_raw_dict)
 }
+
 
 def decode_bytes(raw_bytes: bytes) -> str:
     """Dekoduje bajty do textu - podporuje UTF-16, UTF-8 i Windows-1250."""
@@ -41,6 +55,7 @@ def decode_bytes(raw_bytes: bytes) -> str:
             continue
     return raw_bytes.decode("utf-8", errors="replace")
 
+
 def find_column(headers: List[str], field: str) -> Optional[int]:
     aliases = COLUMN_ALIASES.get(field, [])
     for alias in aliases:
@@ -53,11 +68,12 @@ def find_column(headers: List[str], field: str) -> Optional[int]:
                 return i
     return None
 
+
 def parse_amount(value: str) -> float:
     if not value:
         return 0.0
     v = value.strip()
-    for ch in ("\xa0", "\u00a0", "\u202f", "\u2009", " "):
+    for ch in ("\xa0", " ", " ", " ", " "):
         v = v.replace(ch, "")
     v = v.replace(",", ".")
     parts = v.split(".")
@@ -67,6 +83,7 @@ def parse_amount(value: str) -> float:
         return float(v)
     except ValueError:
         return 0.0
+
 
 def parse_date(value: str) -> Optional[str]:
     if not value:
@@ -79,6 +96,7 @@ def parse_date(value: str) -> Optional[str]:
             continue
     return value
 
+
 def _find_header_row(rows: list) -> Optional[int]:
     """Najde radek s hlavickami - zkusi find_column na kazdem radku."""
     for i, row in enumerate(rows[:10]):
@@ -89,6 +107,14 @@ def _find_header_row(rows: list) -> Optional[int]:
         if find_column(headers, "datum") is not None and find_column(headers, "castka") is not None:
             return i
     return None
+
+
+def _cell(row: List[str], col_map: Dict[str, int], field: str) -> str:
+    idx = col_map.get(field)
+    if idx is not None and idx < len(row):
+        return row[idx].strip()
+    return ""
+
 
 def _try_parse(text: str, delimiter: str) -> List[Dict]:
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
@@ -118,8 +144,8 @@ def _try_parse(text: str, delimiter: str) -> List[Dict]:
         if not row or all(c.strip() == "" for c in row):
             continue
         try:
-            datum_raw = row[col_map["datum"]].strip() if col_map.get("datum") is not None and col_map["datum"] < len(row) else ""
-            castka_raw = row[col_map["castka"]].strip() if col_map.get("castka") is not None and col_map["castka"] < len(row) else ""
+            datum_raw = _cell(row, col_map, "datum")
+            castka_raw = _cell(row, col_map, "castka")
 
             datum = parse_date(datum_raw)
             castka = parse_amount(castka_raw)
@@ -127,19 +153,45 @@ def _try_parse(text: str, delimiter: str) -> List[Dict]:
             if not datum or castka == 0.0:
                 continue
 
+            zprava_pro_me = _cell(row, col_map, "zprava_pro_me")
+            zprava_pro_prijemce = _cell(row, col_map, "zprava_pro_prijemce")
+            poznamka = _cell(row, col_map, "poznamka")
+
+            # "popis" = nejvypovidnejsi dostupny text transakce, pouziva se
+            # jako kratky souhrn (napr. pro vyhledavani a klasifikacni pravidla).
+            # Jednotliva puvodni pole (zprava_pro_me/zprava_pro_prijemce/poznamka)
+            # zustavaji zachovana zvlast, aby se nic neztratilo.
+            popis = zprava_pro_me or zprava_pro_prijemce or poznamka or ""
+
             transaction = {
                 "datum": datum,
                 "castka": castka,
-                "mena": row[col_map["mena"]].strip() if col_map.get("mena") is not None and col_map["mena"] < len(row) else "CZK",
-                "protiucet": row[col_map["protiucet"]].strip() if col_map.get("protiucet") is not None and col_map["protiucet"] < len(row) else "",
-                "nazev_protiuctu": row[col_map["nazev_protiuctu"]].strip() if col_map.get("nazev_protiuctu") is not None and col_map["nazev_protiuctu"] < len(row) else "",
-                "kod_banky": row[col_map["kod_banky"]].strip() if col_map.get("kod_banky") is not None and col_map["kod_banky"] < len(row) else "",
-                "variabilni": row[col_map["variabilni"]].strip() if col_map.get("variabilni") is not None and col_map["variabilni"] < len(row) else "",
-                "konstantni": row[col_map["konstantni"]].strip() if col_map.get("konstantni") is not None and col_map["konstantni"] < len(row) else "",
-                "specificke": row[col_map["specificke"]].strip() if col_map.get("specificke") is not None and col_map["specificke"] < len(row) else "",
-                "popis": row[col_map["popis"]].strip() if col_map.get("popis") is not None and col_map["popis"] < len(row) else "",
-                "id_transakce": row[col_map["id_transakce"]].strip() if col_map.get("id_transakce") is not None and col_map["id_transakce"] < len(row) else "",
-                "typ": row[col_map["typ"]].strip() if col_map.get("typ") is not None and col_map["typ"] < len(row) else "",
+                "mena": _cell(row, col_map, "mena") or "CZK",
+                "protiucet": _cell(row, col_map, "protiucet"),
+                "nazev_protiuctu": _cell(row, col_map, "nazev_protiuctu"),
+                "iban": _cell(row, col_map, "iban"),
+                "bic": _cell(row, col_map, "bic"),
+                "kod_banky": _cell(row, col_map, "kod_banky"),
+                "variabilni": _cell(row, col_map, "variabilni"),
+                "konstantni": _cell(row, col_map, "konstantni"),
+                "specificke": _cell(row, col_map, "specificke"),
+                "typ": _cell(row, col_map, "typ"),
+                "popis": popis,
+                "zprava_pro_me": zprava_pro_me,
+                "adresa_platce": _cell(row, col_map, "adresa_platce"),
+                "zprava_pro_prijemce": zprava_pro_prijemce,
+                "adresa_prijemce": _cell(row, col_map, "adresa_prijemce"),
+                "poznamka": poznamka,
+                "kategorie_banky": _cell(row, col_map, "kategorie_banky"),
+                "id_transakce": _cell(row, col_map, "id_transakce"),
+                "cislo_karty": _cell(row, col_map, "cislo_karty"),
+                "misto_karty": _cell(row, col_map, "misto_karty"),
+                "reference_platby": _cell(row, col_map, "reference_platby"),
+                "nazev_uctu_vlastnika": _cell(row, col_map, "nazev_uctu_vlastnika"),
+                "cislo_uctu_vlastnika": _cell(row, col_map, "cislo_uctu_vlastnika"),
+                # Cely puvodni radek (vsechny sloupce z exportu, vcetne tech,
+                # ktere nemame zvlast namapovane) - pro 100% dohledatelnost.
+                "raw": json.dumps(dict(zip(headers, row)), ensure_ascii=False),
             }
             transactions.append(transaction)
         except (IndexError, ValueError):
@@ -151,7 +203,7 @@ def _try_parse(text: str, delimiter: str) -> List[Dict]:
 def parse_cs_csv(raw_bytes: bytes) -> List[Dict]:
     """Parsuje CSV export z Ceske sporitelny vcetne UTF-16 kodovani."""
     text = decode_bytes(raw_bytes)
-    text = text.lstrip('\ufeff')
+    text = text.lstrip('﻿')
 
     for delimiter in (";", ",", "\t"):
         try:

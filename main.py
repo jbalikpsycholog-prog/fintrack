@@ -115,8 +115,11 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
             iy, im = d.year, d.month
         except Exception:
             iy, im = datetime.now().year, datetime.now().month
+        first = transactions_data[0]
         batch = ImportBatch(filename=file.filename, month=im, year=iy,
-                            transaction_count=len(transactions_data), imported_at=datetime.now(), period_label=period_label)
+                            transaction_count=len(transactions_data), imported_at=datetime.now(), period_label=period_label,
+                            owner_account_name=first.get("nazev_uctu_vlastnika") or None,
+                            owner_account_number=first.get("cislo_uctu_vlastnika") or None)
         db.add(batch)
         db.flush()
         rules = db.query(ClassificationRule).all()
@@ -135,18 +138,36 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
                 date=td.get("datum"), year=iy, month=im,
                 description=td.get("popis", ""),
                 counterparty_name=td.get("nazev_protiuctu", ""),
-                amount=amount, is_income=is_inc,
+                counterparty_account=td.get("protiucet", ""),
+                bank_code=td.get("kod_banky", ""),
+                iban=td.get("iban", ""),
+                bic=td.get("bic", ""),
+                amount=amount, currency=td.get("mena") or "CZK",
+                is_income=is_inc,
                 category_id=cat_id, excluded=False,
                 import_batch_id=batch.id,
                 variable_symbol=td.get("variabilni", ""),
                 specific_symbol=td.get("specificke", ""),
                 constant_symbol=td.get("konstantni", ""),
+                cs_transaction_id=td.get("id_transakce", ""),
+                transaction_type=td.get("typ", ""),
+                message_for_me=td.get("zprava_pro_me", ""),
+                payer_address=td.get("adresa_platce", ""),
+                message_for_recipient=td.get("zprava_pro_prijemce", ""),
+                recipient_address=td.get("adresa_prijemce", ""),
+                note=td.get("poznamka", ""),
+                bank_category=td.get("kategorie_banky", ""),
+                card_number=td.get("cislo_karty", ""),
+                card_location=td.get("misto_karty", ""),
+                payment_reference=td.get("reference_platby", ""),
+                raw_data=td.get("raw", ""),
             )
             db.add(t)
         db.commit()
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
         imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
                      "count": i.transaction_count,
+                     "period_label": i.period_label or "",
                      "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
                     for i in imports]
         return render("import.html", imports=imp_list,
@@ -221,10 +242,29 @@ async def transactions_page(
                 "date": t.date,
                 "description": t.description or "",
                 "counterparty": t.counterparty_name or "",
+                "counterparty_account": t.counterparty_account or "",
+                "iban": t.iban or "",
+                "bic": t.bic or "",
+                "bank_code": t.bank_code or "",
                 "amount": t.amount,
+                "currency": t.currency or "CZK",
                 "is_income": t.is_income,
                 "excluded": t.excluded,
                 "category": cat_name(db, t.category_id),
+                "transaction_type": t.transaction_type or "",
+                "message_for_me": t.message_for_me or "",
+                "payer_address": t.payer_address or "",
+                "message_for_recipient": t.message_for_recipient or "",
+                "recipient_address": t.recipient_address or "",
+                "note": t.note or "",
+                "bank_category": t.bank_category or "",
+                "cs_transaction_id": t.cs_transaction_id or "",
+                "card_number": t.card_number or "",
+                "card_location": t.card_location or "",
+                "payment_reference": t.payment_reference or "",
+                "variable_symbol": t.variable_symbol or "",
+                "constant_symbol": t.constant_symbol or "",
+                "specific_symbol": t.specific_symbol or "",
             })
         return render("transactions.html",
                       transactions=t_list, categories=cats,

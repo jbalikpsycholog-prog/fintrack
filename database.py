@@ -19,6 +19,10 @@ class ImportBatch(Base):
     imported_at = Column(DateTime, default=datetime.now)
     transaction_count = Column(Integer, default=0)
     period_label = Column(String, nullable=True)
+    # Cislo a nazev uctu, ke kteremu se vypis vztahuje (bereme z hlavicky/radku CSV) -
+    # je to vlastnost celeho vypisu, ne jednotlive transakce.
+    owner_account_name = Column(String, nullable=True)
+    owner_account_number = Column(String, nullable=True)
     transactions = relationship("Transaction", back_populates="import_batch")
 
 
@@ -52,6 +56,8 @@ class Transaction(Base):
     counterparty_account = Column(String, nullable=True)
     counterparty_name = Column(String, nullable=True)
     bank_code = Column(String, nullable=True)
+    iban = Column(String, nullable=True)
+    bic = Column(String, nullable=True)
 
     variable_symbol = Column(String, nullable=True)
     constant_symbol = Column(String, nullable=True)
@@ -59,6 +65,27 @@ class Transaction(Base):
 
     description = Column(Text, nullable=True)
     transaction_type = Column(String, nullable=True)
+
+    # Jednotliva puvodni pole z vypisu CS - drzime je zvlast, aby se
+    # pri importu nic neztratilo (viz pozadavek na zobrazeni "1:1").
+    message_for_me = Column(Text, nullable=True)
+    payer_address = Column(Text, nullable=True)
+    message_for_recipient = Column(Text, nullable=True)
+    recipient_address = Column(Text, nullable=True)
+    note = Column(Text, nullable=True)
+
+    # Kategorie, kterou transakci prirazuje sama banka (informativni, odlisna
+    # od uzivatelovych vlastnich kategorii v poli category_id).
+    bank_category = Column(String, nullable=True)
+
+    card_number = Column(String, nullable=True)
+    card_location = Column(String, nullable=True)
+    payment_reference = Column(String, nullable=True)
+
+    # Cely puvodni radek z CSV (vsechny sloupce) jako JSON - pojistka, aby
+    # byl k dispozici uplne kazdy udaj z vypisu, i kdyz pro nej nemame
+    # vlastni sloupec.
+    raw_data = Column(Text, nullable=True)
 
     is_income = Column(Boolean, default=False)
     excluded = Column(Boolean, default=False)
@@ -91,18 +118,45 @@ class Budget(Base):
     category = relationship("Category", back_populates="budgets")
 
 
+# Sloupce, ktere pribyly po prvnim vydani aplikace. Pri kazdem startu se
+# zkontroluje, jestli v databazi chybi, a pokud ano, doplni se (ALTER TABLE),
+# aniz by se smazala existujici data.
+NEW_COLUMNS = [
+    ("import_batches", "owner_account_name", "TEXT"),
+    ("import_batches", "owner_account_number", "TEXT"),
+    ("import_batches", "period_label", "TEXT"),
+    ("transactions", "iban", "TEXT"),
+    ("transactions", "bic", "TEXT"),
+    ("transactions", "message_for_me", "TEXT"),
+    ("transactions", "payer_address", "TEXT"),
+    ("transactions", "message_for_recipient", "TEXT"),
+    ("transactions", "recipient_address", "TEXT"),
+    ("transactions", "note", "TEXT"),
+    ("transactions", "bank_category", "TEXT"),
+    ("transactions", "card_number", "TEXT"),
+    ("transactions", "card_location", "TEXT"),
+    ("transactions", "payment_reference", "TEXT"),
+    ("transactions", "raw_data", "TEXT"),
+]
+
+
 def run_migrations():
-        import sqlite3
-        db_path = DATABASE_URL.replace("sqlite:///", "")
-        try:
-                    conn = sqlite3.connect(db_path)
-                    cur = conn.cursor()
-                    cols = [row[1] for row in cur.execute("PRAGMA table_info(import_batches)")]
-                    if "period_label" not in cols:
-                                    cur.execute("ALTER TABLE import_batches ADD COLUMN period_label TEXT")
-                                    conn.commit()
-                                    conn.close()
-        except Exception:
-            pass
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        tables_seen = {}
+        for table, column, coltype in NEW_COLUMNS:
+            if table not in tables_seen:
+                tables_seen[table] = [row[1] for row in cur.execute(f"PRAGMA table_info({table})")]
+            if column not in tables_seen[table]:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+                tables_seen[table].append(column)
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
 
 run_migrations()
