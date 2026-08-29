@@ -66,14 +66,17 @@
           {% endif %}
         </td>
         <td class="px-4 py-3" onclick="event.stopPropagation();">
-          <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center">
+          <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center flex-wrap">
             <select name="category" class="border rounded px-2 py-1 text-xs bg-white">
               <option value="">– kategorie –</option>
               {% for c in categories %}
-              <option value="{{ c.name }}" {% if c.name == t.category and t.tax_relevant %}selected{% endif %}>{{ c.name }}</option>
+              <option value="{{ c.name }}" {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>
               {% endfor %}
-              <option value="NOT_RELEVANT" {% if not t.tax_relevant %}selected{% endif %}>DAŇOVĚ NERELEVANTNÍ</option>
             </select>
+            <label class="flex items-center gap-1 text-[11px] text-slate-500 whitespace-nowrap">
+              <input type="checkbox" name="tax_relevant" value="1" {% if t.tax_relevant %}checked{% endif %}>
+              daň. relevantní
+            </label>
             <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">OK</button>
           </form>
           {% if t.bank_category %}
