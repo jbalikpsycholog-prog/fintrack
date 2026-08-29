@@ -5,7 +5,7 @@
   <div>
     <h1 class="text-2xl font-bold text-slate-800">
       {% if current_filter == 'unclassified' %}Nezařazené položky
-      {% elif current_filter == 'excluded' %}Vyloučené položky
+      {% elif current_filter == 'not_relevant' %}Daňově nerelevantní položky
       {% elif current_filter == 'income' %}Příjmy
       {% elif current_filter == 'expense' %}Výdaje
       {% else %}Všechny transakce
@@ -17,7 +17,7 @@
     <a href="/transactions?t_type=unclassified" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'unclassified' %}bg-orange-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Nezařazené</a>
     <a href="/transactions?t_type=income" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'income' %}bg-green-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Příjmy</a>
     <a href="/transactions?t_type=expense" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'expense' %}bg-red-500 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Výdaje</a>
-    <a href="/transactions?t_type=excluded" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'excluded' %}bg-slate-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Vyloučené</a>
+    <a href="/transactions?t_type=not_relevant" class="px-3 py-1.5 rounded-lg text-xs font-medium {% if current_filter == 'not_relevant' %}bg-slate-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">Daňově nerelevantní</a>
   </div>
 </div>
 
@@ -70,9 +70,9 @@
             <select name="category" class="border rounded px-2 py-1 text-xs bg-white">
               <option value="">– kategorie –</option>
               {% for c in categories %}
-              <option value="{{ c.name }}" {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>
+              <option value="{{ c.name }}" {% if c.name == t.category and t.tax_relevant %}selected{% endif %}>{{ c.name }}</option>
               {% endfor %}
-              <option value="EXCLUDED" {% if t.category == 'EXCLUDED' %}selected{% endif %}>VYLOUČIT</option>
+              <option value="NOT_RELEVANT" {% if not t.tax_relevant %}selected{% endif %}>DAŇOVĚ NERELEVANTNÍ</option>
             </select>
             <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">OK</button>
           </form>
@@ -88,6 +88,8 @@
       <tr id="detail-{{ t.id }}" class="hidden bg-slate-50/70 border-b border-slate-100">
         <td colspan="6" class="px-4 py-4">
           <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-xs text-slate-600">
+            <div><span class="text-slate-400">Zdroj:</span> {% if t.source_type == 'bank' %}Banka{% elif t.source_type == 'cash' %}Hotovost{% elif t.source_type == 'nonmonetary' %}Nepeněžní{% else %}{{ t.source_type }}{% endif %}</div>
+            <div><span class="text-slate-400">Daňově relevantní:</span> {{ 'Ano' if t.tax_relevant else 'Ne' }}</div>
             <div><span class="text-slate-400">Protistrana:</span> {{ t.counterparty or '—' }}</div>
             <div><span class="text-slate-400">Číslo účtu / IBAN:</span> {{ t.counterparty_account or t.iban or '—' }}</div>
             <div><span class="text-slate-400">Banka (BIC):</span> {{ t.bic or t.bank_code or '—' }}</div>
@@ -105,6 +107,14 @@
             {% if t.card_number %}<div><span class="text-slate-400">Číslo karty:</span> {{ t.card_number }}</div>{% endif %}
             {% if t.card_location %}<div><span class="text-slate-400">Místo použití karty:</span> {{ t.card_location }}</div>{% endif %}
             {% if t.payment_reference %}<div><span class="text-slate-400">Reference platby:</span> {{ t.payment_reference }}</div>{% endif %}
+          </div>
+          <div class="mt-3 pt-3 border-t border-slate-200 flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-400">Odkaz na doklad:</span>
+            <form method="post" action="/transactions/{{ t.id }}/document" class="flex gap-2 items-center flex-1 min-w-52">
+              <input type="url" name="document_url" value="{{ t.document_url }}" placeholder="https://drive.google.com/..." class="border rounded px-2 py-1 text-xs flex-1">
+              <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">Uložit</button>
+            </form>
+            {% if t.document_url %}<a href="{{ t.document_url }}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline text-xs">Otevřít doklad ↗</a>{% endif %}
           </div>
         </td>
       </tr>
