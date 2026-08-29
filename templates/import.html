@@ -43,8 +43,9 @@
     <thead>
       <tr class="text-left text-slate-400 border-b">
         <th class="pb-2">Soubor</th>
-        <th class="pb-2">Obdobi</th>              <th class="pb-2">Popis obdobi</th>
-        <th class="pb-2">Transakci</th>
+        <th class="pb-2">Období</th>
+        <th class="pb-2">Popis období</th>
+        <th class="pb-2">Transakcí</th>
         <th class="pb-2">Datum importu</th>
         <th class="pb-2"></th>
       </tr>
@@ -54,7 +55,8 @@
     <tr class="border-b last:border-0 hover:bg-slate-50">
       <td class="py-2 pr-4 text-slate-700">{{ b.filename }}</td>
       <td class="py-2 pr-4 text-slate-600">{{ b.month }}/{{ b.year }}</td>
-      <td class="py-2 pr-4 text-slate-600">{{ b.count }}</td>              <td class="py-2 pr-4 text-slate-600">{{ b.period_label }}</td>
+      <td class="py-2 pr-4 text-slate-600">{{ b.period_label }}</td>
+      <td class="py-2 pr-4 text-slate-600">{{ b.count }}</td>
       <td class="py-2 pr-4 text-slate-500">{{ b.imported_at }}</td>
       <td class="py-2">
         <div class="flex items-center gap-3">
