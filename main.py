@@ -70,17 +70,17 @@ async def dashboard(request: Request):
         now = datetime.now()
         cy = now.year
         txns = db.query(Transaction).filter(Transaction.year == cy).all()
-        total_income = sum(t.amount for t in txns if t.is_income and not t.excluded)
-        total_expense = sum(abs(t.amount) for t in txns if not t.is_income and not t.excluded)
+        total_income = sum(t.amount for t in txns if t.is_income and t.tax_relevant)
+        total_expense = sum(abs(t.amount) for t in txns if not t.is_income and t.tax_relevant)
         saldo = total_income - total_expense
         unclassified_count = db.query(Transaction).filter(
-            Transaction.category_id == None, Transaction.excluded == False).count()
+            Transaction.category_id == None, Transaction.tax_relevant == True).count()
         cats = db.query(Category).filter(Category.is_active == True).all()
         cat_expenses = []
         for c in cats:
             s = sum(abs(t.amount) for t in db.query(Transaction).filter(
                 Transaction.category_id == c.id, Transaction.year == cy,
-                Transaction.excluded == False).all() if not t.is_income)
+                Transaction.tax_relevant == True).all() if not t.is_income)
             if s > 0:
                 cat_expenses.append({"name": c.name, "total": s})
         recent = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).limit(5).all()
@@ -158,7 +158,7 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
                 bic=td.get("bic", ""),
                 amount=amount, currency=td.get("mena") or "CZK",
                 is_income=is_inc,
-                category_id=cat_id, excluded=False,
+                category_id=cat_id, tax_relevant=True, source_type="bank",
                 import_batch_id=batch.id,
                 variable_symbol=td.get("variabilni", ""),
                 specific_symbol=td.get("specificke", ""),
@@ -221,13 +221,13 @@ async def transactions_page(
     try:
         q = db.query(Transaction)
         if t_type == "unclassified":
-            q = q.filter(Transaction.category_id == None, Transaction.excluded == False)
+            q = q.filter(Transaction.category_id == None, Transaction.tax_relevant == True)
         elif t_type == "income":
-            q = q.filter(Transaction.is_income == True, Transaction.excluded == False)
+            q = q.filter(Transaction.is_income == True, Transaction.tax_relevant == True)
         elif t_type == "expense":
-            q = q.filter(Transaction.is_income == False, Transaction.excluded == False)
-        elif t_type == "excluded":
-            q = q.filter(Transaction.excluded == True)
+            q = q.filter(Transaction.is_income == False, Transaction.tax_relevant == True)
+        elif t_type == "not_relevant":
+            q = q.filter(Transaction.tax_relevant == False)
         if search:
             q = q.filter(
                 (Transaction.description.ilike(f"%{search}%")) |
@@ -263,7 +263,9 @@ async def transactions_page(
                 "amount": t.amount,
                 "currency": t.currency or "CZK",
                 "is_income": t.is_income,
-                "excluded": t.excluded,
+                "tax_relevant": t.tax_relevant,
+                "source_type": t.source_type or "bank",
+                "document_url": t.document_url or "",
                 "category": cat_name(db, t.category_id),
                 "transaction_type": t.transaction_type or "",
                 "message_for_me": t.message_for_me or "",
@@ -296,17 +298,31 @@ async def categorize_transaction(t_id: int, category: str = Form("")):
         t = db.query(Transaction).filter(Transaction.id == t_id).first()
         if not t:
             raise HTTPException(status_code=404)
-        if category == "EXCLUDED":
-            t.excluded = True
+        if category == "NOT_RELEVANT":
+            t.tax_relevant = False
             t.category_id = None
         elif category == "":
             t.category_id = None
-            t.excluded = False
+            t.tax_relevant = True
         else:
             c = db.query(Category).filter(Category.name == category).first()
             if c:
                 t.category_id = c.id
-                t.excluded = False
+                t.tax_relevant = True
+        db.commit()
+        return RedirectResponse(url="/transactions", status_code=303)
+    finally:
+        db.close()
+
+
+@app.post("/transactions/{t_id}/document")
+async def set_transaction_document(t_id: int, document_url: str = Form("")):
+    db = SessionLocal()
+    try:
+        t = db.query(Transaction).filter(Transaction.id == t_id).first()
+        if not t:
+            raise HTTPException(status_code=404)
+        t.document_url = document_url.strip() or None
         db.commit()
         return RedirectResponse(url="/transactions", status_code=303)
     finally:
@@ -411,7 +427,7 @@ async def reports_page(
             year = now.year
         if not month:
             month = now.month
-        q = db.query(Transaction).filter(Transaction.year == year, Transaction.excluded == False)
+        q = db.query(Transaction).filter(Transaction.year == year, Transaction.tax_relevant == True)
         if period == "month":
             q = q.filter(Transaction.month == month)
         elif period == "quarter":
@@ -445,7 +461,7 @@ async def reports_page(
         for m in range(1, 13):
             mt = db.query(Transaction).filter(
                 Transaction.year == year, Transaction.month == m,
-                Transaction.excluded == False).all()
+                Transaction.tax_relevant == True).all()
             monthly_labels.append(month_names[m - 1])
             monthly_incomes.append(round(sum(t.amount for t in mt if t.is_income), 2))
             monthly_expenses_chart.append(round(sum(abs(t.amount) for t in mt if not t.is_income), 2))

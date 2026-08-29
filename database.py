@@ -88,7 +88,18 @@ class Transaction(Base):
     raw_data = Column(Text, nullable=True)
 
     is_income = Column(Boolean, default=False)
-    excluded = Column(Boolean, default=False)
+
+    # Zdroj transakce: "bank" (import z vypisu), "cash" (rucni hotovostni
+    # zaznam), "nonmonetary" (nepenezni polozka, napr. pausal za auto).
+    source_type = Column(String, default="bank")
+
+    # Jedno spolecne pole pro relevanci: pocita se transakce do prehledu
+    # prijmu/vydaju a do danoveho podkladu? (nahrazuje puvodni "excluded")
+    tax_relevant = Column(Boolean, default=True)
+
+    # Odkaz na doklad/fakturu (napr. URL na Google disk). Zadny upload
+    # souboru primo do appky - jen odkaz ven.
+    document_url = Column(Text, nullable=True)
 
     receipt_path = Column(String, nullable=True)
 
@@ -137,6 +148,9 @@ NEW_COLUMNS = [
     ("transactions", "card_location", "TEXT"),
     ("transactions", "payment_reference", "TEXT"),
     ("transactions", "raw_data", "TEXT"),
+    ("transactions", "source_type", "TEXT DEFAULT 'bank'"),
+    ("transactions", "tax_relevant", "BOOLEAN DEFAULT 1"),
+    ("transactions", "document_url", "TEXT"),
 ]
 
 
@@ -147,12 +161,22 @@ def run_migrations():
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         tables_seen = {}
+        newly_added = set()
         for table, column, coltype in NEW_COLUMNS:
             if table not in tables_seen:
                 tables_seen[table] = [row[1] for row in cur.execute(f"PRAGMA table_info({table})")]
             if column not in tables_seen[table]:
                 cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
                 tables_seen[table].append(column)
+                newly_added.add((table, column))
+
+        # Jednorazovy prevod stareho pole "excluded" (pokud v databazi jeste
+        # existuje) do noveho "tax_relevant" - jen v okamziku, kdy sloupec
+        # tax_relevant teprve vznikl, aby se pozdeji nepremazavaly rucni
+        # zmeny, ktere uzivatel v appce udela.
+        if ("transactions", "tax_relevant") in newly_added and "excluded" in tables_seen["transactions"]:
+            cur.execute("UPDATE transactions SET tax_relevant = 0 WHERE excluded = 1")
+
         conn.commit()
         conn.close()
     except Exception:
