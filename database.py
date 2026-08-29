@@ -33,6 +33,15 @@ class Category(Base):
     name = Column(String, unique=True, nullable=False)
     is_active = Column(Boolean, default=True)
 
+    # Typ kategorie: "expense" (vydajova) nebo "income" (prijmova) - urcuje,
+    # ktere kategorie se nabizeji u vydajovych/prijmovych transakci.
+    category_type = Column(String, default="expense")
+
+    # Vychozi danova relevance pro transakce v teto kategorii (pouziva se
+    # jen jako navrh/predvyplneni ve formulari, uzivatel muze u kazde
+    # transakce zmenit).
+    default_tax_relevant = Column(Boolean, default=True)
+
     transactions = relationship("Transaction", back_populates="category")
     rules = relationship("ClassificationRule", back_populates="category")
     budgets = relationship("Budget", back_populates="category")
@@ -151,7 +160,41 @@ NEW_COLUMNS = [
     ("transactions", "source_type", "TEXT DEFAULT 'bank'"),
     ("transactions", "tax_relevant", "BOOLEAN DEFAULT 1"),
     ("transactions", "document_url", "TEXT"),
+    ("categories", "category_type", "TEXT DEFAULT 'expense'"),
+    ("categories", "default_tax_relevant", "BOOLEAN DEFAULT 1"),
 ]
+
+
+# Cilovy seznam kategorii dle uzivatele (krok 3): (nazev, typ, vychozi danova
+# relevance). Pouziva se jen k jednorazovemu seedovani/aktualizaci pri prvnim
+# spusteni po pridani sloupcu category_type/default_tax_relevant - pozdejsi
+# rucni zmeny uzivatele v appce se timto neprepisuji.
+CATEGORY_SEED = [
+    # Vydajove (bez danoveho dopadu)
+    ("PENZIJKO", "expense", False),
+    ("DAŇ Z PŘÍJMU OSVČ_ZÁLOHA", "expense", False),
+    ("DAŇ Z PŘÍJMU OSVČ", "expense", False),
+    ("ZP OSVČ_ZÁLOHA", "expense", False),
+    ("ZP OSVČ", "expense", False),
+    ("SOC.P OSVČ", "expense", False),
+    ("SOC.P OSVČ_ZÁLOHA", "expense", False),
+    ("OSOBNÍ POTŘEBA", "expense", False),
+    ("POŘÍZENÍ HM", "expense", False),
+    # Vydajove (s danovym dopadem)
+    ("ODPISY HM", "expense", True),
+    ("DROB.VYD", "expense", True),
+    ("BANK.POPLATKY", "expense", True),
+    # Prijmove (bez danoveho dopadu)
+    ("VLASTNÍ PROSTŘEDKY OSVČ", "income", False),
+    # Prijmove (s danovym dopadem) - "DRAVOTNÍ POJ." opraveno na "ZDRAVOTNÍ POJ." (zjevny preklep)
+    ("ZDRAVOTNÍ POJ.", "income", True),
+    ("PEDAGOG.PRAC.", "income", True),
+    ("OSTATNÍ", "income", True),
+]
+
+# Kategorie, ktere uzivatel vyslovne zrusil (deaktivuji se, historicke
+# transakce v nich zustanou zachovany, jen se prestanou nabizet).
+CATEGORY_DEACTIVATE = ["DROB.ADMIN", "DROB.OST.", "FIN.SLUZBY", "PRIJMY"]
 
 
 def run_migrations():
@@ -176,6 +219,26 @@ def run_migrations():
         # zmeny, ktere uzivatel v appce udela.
         if ("transactions", "tax_relevant") in newly_added and "excluded" in tables_seen["transactions"]:
             cur.execute("UPDATE transactions SET tax_relevant = 0 WHERE excluded = 1")
+
+        # Jednorazove seedovani/aktualizace kategorii (krok 3) - jen v okamziku,
+        # kdy sloupec category_type teprve vznikl, aby se pozdeji nepremazavaly
+        # rucni zmeny, ktere uzivatel v appce udela.
+        if ("categories", "category_type") in newly_added:
+            existing = {row[0]: row[1] for row in cur.execute("SELECT name, id FROM categories")}
+            for name, cat_type, default_relevant in CATEGORY_SEED:
+                if name in existing:
+                    cur.execute(
+                        "UPDATE categories SET category_type = ?, default_tax_relevant = ?, is_active = 1 WHERE id = ?",
+                        (cat_type, 1 if default_relevant else 0, existing[name]),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO categories (name, is_active, category_type, default_tax_relevant) VALUES (?, 1, ?, ?)",
+                        (name, cat_type, 1 if default_relevant else 0),
+                    )
+            for name in CATEGORY_DEACTIVATE:
+                if name in existing:
+                    cur.execute("UPDATE categories SET is_active = 0 WHERE id = ?", (existing[name],))
 
         conn.commit()
         conn.close()

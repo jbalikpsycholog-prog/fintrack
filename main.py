@@ -42,16 +42,38 @@ def format_czk(value) -> str:
 jinja_env.filters["czk"] = format_czk
 
 
+# (nazev, typ "expense"/"income", vychozi danova relevance)
 DEFAULT_CATEGORIES = [
-    "SOFTWARE", "HARDWARE", "PRONAJEM", "TEL/INTERNET", "TESTY",
-    "DROB.ADMIN", "DROB.OST.", "FIN.SLUZBY", "VOZIDLO", "PEREX", "PRIJMY"
+    ("SOFTWARE", "expense", True),
+    ("HARDWARE", "expense", True),
+    ("PRONAJEM", "expense", True),
+    ("TEL/INTERNET", "expense", True),
+    ("TESTY", "expense", True),
+    ("VOZIDLO", "expense", True),
+    ("PEREX", "expense", True),
+    ("PENZIJKO", "expense", False),
+    ("DAŇ Z PŘÍJMU OSVČ_ZÁLOHA", "expense", False),
+    ("DAŇ Z PŘÍJMU OSVČ", "expense", False),
+    ("ZP OSVČ_ZÁLOHA", "expense", False),
+    ("ZP OSVČ", "expense", False),
+    ("SOC.P OSVČ", "expense", False),
+    ("SOC.P OSVČ_ZÁLOHA", "expense", False),
+    ("OSOBNÍ POTŘEBA", "expense", False),
+    ("POŘÍZENÍ HM", "expense", False),
+    ("ODPISY HM", "expense", True),
+    ("DROB.VYD", "expense", True),
+    ("BANK.POPLATKY", "expense", True),
+    ("VLASTNÍ PROSTŘEDKY OSVČ", "income", False),
+    ("ZDRAVOTNÍ POJ.", "income", True),
+    ("PEDAGOG.PRAC.", "income", True),
+    ("OSTATNÍ", "income", True),
 ]
 
 
 def init_default_categories(db: Session):
-    for name in DEFAULT_CATEGORIES:
+    for name, cat_type, default_relevant in DEFAULT_CATEGORIES:
         if not db.query(Category).filter(Category.name == name).first():
-            db.add(Category(name=name, is_active=True))
+            db.add(Category(name=name, is_active=True, category_type=cat_type, default_tax_relevant=default_relevant))
     db.commit()
 
 
@@ -411,20 +433,24 @@ async def set_transaction_document(t_id: int, document_url: str = Form("")):
 async def categories_page(request: Request):
     db = SessionLocal()
     try:
-        cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
-        cat_list = [{"id": c.id, "name": c.name, "cat_type": "expense", "keywords": ""} for c in cats]
+        cats = db.query(Category).filter(Category.is_active == True).order_by(Category.category_type.desc(), Category.name).all()
+        cat_list = [{"id": c.id, "name": c.name, "cat_type": c.category_type or "expense",
+                     "default_tax_relevant": c.default_tax_relevant} for c in cats]
         return render("categories.html", categories=cat_list, msg=None)
     finally:
         db.close()
 
 
 @app.post("/categories/add")
-async def add_category(name: str = Form(...), cat_type: str = Form("expense"), keywords: str = Form("")):
+async def add_category(name: str = Form(...), cat_type: str = Form("expense"), default_tax_relevant: str = Form("")):
     db = SessionLocal()
     try:
         name = name.strip().upper()
+        if cat_type not in ("expense", "income"):
+            cat_type = "expense"
         if name and not db.query(Category).filter(Category.name == name).first():
-            db.add(Category(name=name, is_active=True))
+            db.add(Category(name=name, is_active=True, category_type=cat_type,
+                             default_tax_relevant=bool(default_tax_relevant)))
             db.commit()
         return RedirectResponse(url="/categories", status_code=303)
     finally:
