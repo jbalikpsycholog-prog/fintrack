@@ -209,6 +209,86 @@ async def delete_import_batch(batch_id: int):
     finally:
         db.close()
 
+@app.get("/transactions/new", response_class=HTMLResponse)
+async def new_transaction_page(request: Request, added: Optional[str] = None):
+    db = SessionLocal()
+    try:
+        init_default_categories(db)
+        cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
+        recent = db.query(Transaction).filter(Transaction.source_type != "bank").order_by(Transaction.id.desc()).limit(25).all()
+        recent_list = [{
+            "id": t.id, "date": t.date, "source_type": t.source_type or "cash",
+            "is_income": t.is_income, "amount": t.amount, "currency": t.currency or "CZK",
+            "counterparty": t.counterparty_name or "", "description": t.description or "",
+            "category": cat_name(db, t.category_id), "tax_relevant": t.tax_relevant,
+        } for t in recent]
+        today = datetime.now().strftime("%Y-%m-%d")
+        return render("transaction_new.html", categories=cats, recent=recent_list, today=today,
+                      msg="Transakce byla přidána." if added else None)
+    finally:
+        db.close()
+
+
+@app.post("/transactions/new")
+async def create_manual_transaction(
+    source_type: str = Form(...),
+    direction: str = Form(...),
+    date: str = Form(...),
+    amount: float = Form(...),
+    category: str = Form(""),
+    counterparty: str = Form(""),
+    description: str = Form(""),
+    tax_relevant: str = Form(""),
+    document_url: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        if source_type not in ("cash", "nonmonetary"):
+            source_type = "cash"
+        is_inc = direction == "income"
+        signed_amount = abs(amount) if is_inc else -abs(amount)
+        try:
+            d = datetime.strptime(date, "%Y-%m-%d")
+            iy, im = d.year, d.month
+        except Exception:
+            now = datetime.now()
+            iy, im = now.year, now.month
+        cat_id = None
+        if category:
+            c = db.query(Category).filter(Category.name == category).first()
+            cat_id = c.id if c else None
+        t = Transaction(
+            date=date, year=iy, month=im,
+            amount=signed_amount, currency="CZK",
+            is_income=is_inc,
+            category_id=cat_id,
+            tax_relevant=bool(tax_relevant),
+            source_type=source_type,
+            counterparty_name=counterparty.strip() or None,
+            description=description.strip() or None,
+            document_url=document_url.strip() or None,
+        )
+        db.add(t)
+        db.commit()
+        return RedirectResponse(url="/transactions/new?added=1", status_code=303)
+    finally:
+        db.close()
+
+
+@app.post("/transactions/{t_id}/delete")
+async def delete_transaction(t_id: int, next: str = Form("/transactions")):
+    db = SessionLocal()
+    try:
+        t = db.query(Transaction).filter(Transaction.id == t_id).first()
+        if t:
+            db.delete(t)
+            db.commit()
+        safe_next = next if next.startswith("/") else "/transactions"
+        return RedirectResponse(url=safe_next, status_code=303)
+    finally:
+        db.close()
+
+
 @app.get("/transactions", response_class=HTMLResponse)
 async def transactions_page(
     request: Request,
