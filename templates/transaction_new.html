@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Nová transakce – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-bold text-slate-800">Nová transakce</h1>
+  <p class="text-slate-500 text-sm">Hotovostní příjem/výdaj nebo nepeněžní položka (např. paušál za vozidlo). Bankovní výpisy se přidávají přes Import.</p>
+</div>
+
+{% if msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-5 text-sm">{{ msg }}</div>
+{% endif %}
+
+<div class="bg-white rounded-xl shadow-sm p-6 mb-6 max-w-2xl">
+  <form method="post" action="/transactions/new" class="space-y-4">
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Zdroj</label>
+      <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="source_type" value="cash" checked> Hotovost
+        </label>
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="source_type" value="nonmonetary"> Nepeněžní položka
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Typ</label>
+      <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="direction" value="expense" checked> Výdaj
+        </label>
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="direction" value="income"> Příjem
+        </label>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Datum <span class="text-red-500">*</span></label>
+        <input type="date" name="date" value="{{ today }}" required
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Částka (Kč) <span class="text-red-500">*</span></label>
+        <input type="number" name="amount" step="0.01" min="0" required placeholder="např. 1500"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Popis <span class="text-red-500">*</span></label>
+      <input type="text" name="description" required placeholder="např. Nákup kancelářských potřeb / Paušál za vozidlo - leden"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Protistrana <span class="text-slate-400 font-normal text-xs">(komu/od koho – u nepeněžní položky nech prázdné)</span></label>
+      <input type="text" name="counterparty" placeholder="např. jméno dodavatele nebo klienta"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Kategorie</label>
+        <select name="category" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="">– kategorie –</option>
+          {% for c in categories %}
+          <option value="{{ c.name }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Odkaz na doklad <span class="text-slate-400 font-normal text-xs">(volitelné)</span></label>
+        <input type="url" name="document_url" placeholder="https://drive.google.com/..."
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="tax_relevant" value="1" checked>
+        Daňově relevantní
+      </label>
+    </div>
+
+    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium text-sm transition-colors">
+      Přidat transakci
+    </button>
+  </form>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm p-6">
+  <h2 class="font-semibold text-slate-700 mb-4">Naposledy přidané ruční transakce</h2>
+  {% if recent %}
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-left text-slate-400 border-b">
+        <th class="pb-2">Datum</th>
+        <th class="pb-2">Zdroj</th>
+        <th class="pb-2">Popis</th>
+        <th class="pb-2">Kategorie</th>
+        <th class="pb-2 text-right">Částka</th>
+        <th class="pb-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in recent %}
+    <tr class="border-b last:border-0 hover:bg-slate-50">
+      <td class="py-2 pr-4 text-slate-600 whitespace-nowrap">{{ r.date }}</td>
+      <td class="py-2 pr-4 text-slate-500 text-xs">{% if r.source_type == 'cash' %}Hotovost{% else %}Nepeněžní{% endif %}</td>
+      <td class="py-2 pr-4 text-slate-700">
+        {{ r.description or '—' }}
+        {% if r.counterparty %}<div class="text-xs text-slate-400">{{ r.counterparty }}</div>{% endif %}
+      </td>
+      <td class="py-2 pr-4 text-slate-500 text-xs">{{ r.category or '—' }}{% if not r.tax_relevant %} <span class="text-slate-400">(nerelevantní)</span>{% endif %}</td>
+      <td class="py-2 pr-4 text-right font-medium whitespace-nowrap {% if r.amount > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+        {{ r.amount|czk }} {{ r.currency }}
+      </td>
+      <td class="py-2">
+        <form method="post" action="/transactions/{{ r.id }}/delete" onsubmit="return confirm('Smazat tuto transakci?');" class="inline">
+          <input type="hidden" name="next" value="/transactions/new">
+          <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium">Smazat</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-slate-400 text-sm">Zatím žádné ruční transakce.</p>
+  {% endif %}
+</div>
+{% endblock %}

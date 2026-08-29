@@ -51,7 +51,7 @@
     </thead>
     <tbody>
       {% for t in transactions %}
-      {% set msg_text = t.message_for_me or t.message_for_recipient or t.note %}
+      {% set msg_text = t.message_for_me or t.message_for_recipient or t.note or t.description %}
       <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="var d=document.getElementById('detail-{{ t.id }}'); d.classList.toggle('hidden'); var i=document.getElementById('arrow-{{ t.id }}'); i.textContent = d.classList.contains('hidden') ? '▸' : '▾';">
         <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ t.date }}</td>
         <td class="px-4 py-3 text-slate-800">
@@ -118,6 +118,12 @@
               <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">Uložit</button>
             </form>
             {% if t.document_url %}<a href="{{ t.document_url }}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline text-xs">Otevřít doklad ↗</a>{% endif %}
+            {% if t.source_type != 'bank' %}
+            <form method="post" action="/transactions/{{ t.id }}/delete" onsubmit="return confirm('Smazat tuto ručně přidanou transakci?');" class="ml-auto">
+              <input type="hidden" name="next" value="/transactions">
+              <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium">Smazat transakci</button>
+            </form>
+            {% endif %}
           </div>
         </td>
       </tr>
