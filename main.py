@@ -292,23 +292,21 @@ async def transactions_page(
 
 
 @app.post("/transactions/{t_id}/categorize")
-async def categorize_transaction(t_id: int, category: str = Form("")):
+async def categorize_transaction(t_id: int, category: str = Form(""), tax_relevant: str = Form("")):
     db = SessionLocal()
     try:
         t = db.query(Transaction).filter(Transaction.id == t_id).first()
         if not t:
             raise HTTPException(status_code=404)
-        if category == "NOT_RELEVANT":
-            t.tax_relevant = False
-            t.category_id = None
-        elif category == "":
-            t.category_id = None
-            t.tax_relevant = True
-        else:
+        # Kategorie a danova relevance jsou ted na sobe nezavisle - kategorii
+        # jde priradit i danove nerelevantni transakci (napr. pro prehled,
+        # o jake nejcastejsi polozky u nerelevantnich transakci jde).
+        if category:
             c = db.query(Category).filter(Category.name == category).first()
-            if c:
-                t.category_id = c.id
-                t.tax_relevant = True
+            t.category_id = c.id if c else None
+        else:
+            t.category_id = None
+        t.tax_relevant = bool(tax_relevant)
         db.commit()
         return RedirectResponse(url="/transactions", status_code=303)
     finally:
