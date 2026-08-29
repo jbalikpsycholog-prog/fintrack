@@ -81,7 +81,7 @@
           {% endif %}
         </td>
         <td class="px-4 py-3 text-right font-medium whitespace-nowrap {% if t.amount > 0 %}text-green-600{% else %}text-red-600{% endif %}">
-          {{ "%.2f"|format(t.amount) }} {{ t.currency }}
+          {{ t.amount|czk }} {{ t.currency }}
         </td>
         <td class="px-4 py-3 text-slate-400 text-xs" id="arrow-{{ t.id }}">▸</td>
       </tr>
