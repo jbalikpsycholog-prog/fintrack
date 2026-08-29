@@ -28,6 +28,20 @@ def render(template_name: str, **ctx) -> HTMLResponse:
     return HTMLResponse(t.render(**ctx))
 
 
+def format_czk(value) -> str:
+    """Formatuje castku ceskym zpusobem: mezera jako oddelovac tisicu, carka jako desetinna (napr. 16 469,04)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    text = f"{v:,.2f}"  # "16,469.04" (anglicky formatovane)
+    text = text.replace(",", " ").replace(".", ",")  # -> "16 469,04"
+    return text
+
+
+jinja_env.filters["czk"] = format_czk
+
+
 DEFAULT_CATEGORIES = [
     "SOFTWARE", "HARDWARE", "PRONAJEM", "TEL/INTERNET", "TESTY",
     "DROB.ADMIN", "DROB.OST.", "FIN.SLUZBY", "VOZIDLO", "PEREX", "PRIJMY"
