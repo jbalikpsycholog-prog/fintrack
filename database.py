@@ -42,7 +42,7 @@ class Category(Base):
     # transakce zmenit).
     default_tax_relevant = Column(Boolean, default=True)
 
-    transactions = relationship("Transaction", back_populates="category")
+    transactions = relationship("Transaction", back_populates="category", foreign_keys="Transaction.category_id")
     rules = relationship("ClassificationRule", back_populates="category")
     budgets = relationship("Budget", back_populates="category")
 
@@ -110,10 +110,17 @@ class Transaction(Base):
     # souboru primo do appky - jen odkaz ven.
     document_url = Column(Text, nullable=True)
 
+    # Navrh kategorie/danove relevance na zaklade jiz zarazenych transakci se
+    # stejnym popisem a typem (viz main.recompute_suggestions). Jen doporuceni
+    # - do skutecneho category_id/tax_relevant se prepise az potvrzenim (OK).
+    suggested_category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    suggested_tax_relevant = Column(Boolean, nullable=True)
+
     receipt_path = Column(String, nullable=True)
 
     import_batch = relationship("ImportBatch", back_populates="transactions")
-    category = relationship("Category", back_populates="transactions")
+    category = relationship("Category", back_populates="transactions", foreign_keys=[category_id])
+    suggested_category = relationship("Category", foreign_keys=[suggested_category_id])
 
 
 class ClassificationRule(Base):
@@ -162,6 +169,8 @@ NEW_COLUMNS = [
     ("transactions", "document_url", "TEXT"),
     ("categories", "category_type", "TEXT DEFAULT 'expense'"),
     ("categories", "default_tax_relevant", "BOOLEAN DEFAULT 1"),
+    ("transactions", "suggested_category_id", "INTEGER"),
+    ("transactions", "suggested_tax_relevant", "BOOLEAN"),
 ]
 
 

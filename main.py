@@ -1,4 +1,5 @@
 import os
+from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
@@ -82,6 +83,69 @@ def cat_name(db, cat_id):
         return None
     c = db.query(Category).filter(Category.id == cat_id).first()
     return c.name if c else None
+
+
+def _match_key(t: Transaction):
+    """Klic pro parovani navrhu: normalizovany popis + typ transakce.
+    Prazdny popis nebo typ se nikdy neparuje (predejde nesmyslnym shodam)."""
+    desc = (t.description or "").strip().lower()
+    ttype = (t.transaction_type or "").strip().lower()
+    if not desc or not ttype:
+        return None
+    return (desc, ttype)
+
+
+def recompute_suggestions(db: Session):
+    """Pro vsechny dosud nezarazene bankovni transakce (category_id je prazdne)
+    spocita navrh kategorie + danove relevance podle historie jiz zarazenych
+    bankovnich transakci se stejnym popisem a typem transakce (prichozi/odchozi
+    uhrada apod.). Pri rozporu v historii (ruzne kategorie u stejneho popisu+typu)
+    se pouzije nejcastejsi shoda. Nikdy nezapisuje do category_id/tax_relevant -
+    jen do suggested_category_id/suggested_tax_relevant, coz je pouze doporuceni,
+    ktere uzivatel bud potvrdi (OK), nebo si vybere jinak."""
+    unclassified = db.query(Transaction).filter(
+        Transaction.category_id.is_(None),
+        Transaction.source_type == "bank",
+    ).all()
+    if not unclassified:
+        return
+
+    classified = db.query(Transaction).filter(
+        Transaction.category_id.isnot(None),
+        Transaction.source_type == "bank",
+    ).order_by(Transaction.id.asc()).all()
+
+    history = defaultdict(Counter)
+    for t in classified:
+        key = _match_key(t)
+        if key:
+            history[key][(t.category_id, bool(t.tax_relevant))] += 1
+
+    changed = False
+    for t in unclassified:
+        key = _match_key(t)
+        suggestion = None
+        if key and key in history:
+            suggestion = history[key].most_common(1)[0][0]
+        new_cat = suggestion[0] if suggestion else None
+        new_rel = suggestion[1] if suggestion else None
+        if t.suggested_category_id != new_cat or t.suggested_tax_relevant != new_rel:
+            t.suggested_category_id = new_cat
+            t.suggested_tax_relevant = new_rel
+            changed = True
+    if changed:
+        db.commit()
+
+
+# Jednorazove (pri kazdem startu appky) spocitani navrhu i pro transakce,
+# ktere uz v databazi jsou nezarazene ze starsich importu - pokryje i
+# "zpetne" navrhy pro existujici zaznamy, ne jen pro nove naimportovane.
+_startup_db = SessionLocal()
+try:
+    init_default_categories(_startup_db)
+    recompute_suggestions(_startup_db)
+finally:
+    _startup_db.close()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -200,6 +264,7 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
             )
             db.add(t)
         db.commit()
+        recompute_suggestions(db)
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
         imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
                      "count": i.transaction_count,
@@ -369,6 +434,8 @@ async def transactions_page(
                 "source_type": t.source_type or "bank",
                 "document_url": t.document_url or "",
                 "category": cat_name(db, t.category_id),
+                "suggested_category": cat_name(db, t.suggested_category_id) if not t.category_id else None,
+                "suggested_tax_relevant": t.suggested_tax_relevant if not t.category_id else None,
                 "transaction_type": t.transaction_type or "",
                 "message_for_me": t.message_for_me or "",
                 "payer_address": t.payer_address or "",
@@ -409,7 +476,13 @@ async def categorize_transaction(t_id: int, category: str = Form(""), tax_releva
         else:
             t.category_id = None
         t.tax_relevant = bool(tax_relevant)
+        if t.category_id:
+            # Jakmile je transakce skutecne zarazena (potvrzene, ne jen
+            # navrzene), navrh uz neni potreba.
+            t.suggested_category_id = None
+            t.suggested_tax_relevant = None
         db.commit()
+        recompute_suggestions(db)
         return RedirectResponse(url="/transactions", status_code=303)
     finally:
         db.close()
