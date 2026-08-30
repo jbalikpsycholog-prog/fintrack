@@ -52,7 +52,11 @@
     <tbody>
       {% for t in transactions %}
       {% set msg_text = t.message_for_me or t.message_for_recipient or t.note or t.description %}
-      <tr id="row-{{ t.id }}" class="tx-row border-b border-slate-50 cursor-pointer {% if t.category %}bg-green-50 hover:bg-green-100{% else %}bg-red-50 hover:bg-red-100{% endif %}" onclick="var d=document.getElementById('detail-{{ t.id }}'); d.classList.toggle('hidden'); var i=document.getElementById('arrow-{{ t.id }}'); i.textContent = d.classList.contains('hidden') ? '▸' : '▾';">
+      {% set selected_name = t.category or t.suggested_category %}
+      {% set relevant_checked = t.tax_relevant if t.category else (t.suggested_tax_relevant if t.suggested_category else t.tax_relevant) %}
+      <tr id="row-{{ t.id }}" data-has-suggestion="{{ '1' if t.suggested_category else '0' }}"
+          class="tx-row border-b border-slate-50 cursor-pointer {% if t.category %}bg-green-50 hover:bg-green-100{% elif t.suggested_category %}bg-orange-50 hover:bg-orange-100{% else %}bg-red-50 hover:bg-red-100{% endif %}"
+          onclick="var d=document.getElementById('detail-{{ t.id }}'); d.classList.toggle('hidden'); var i=document.getElementById('arrow-{{ t.id }}'); i.textContent = d.classList.contains('hidden') ? '▸' : '▾';">
         <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ t.date }}</td>
         <td class="px-4 py-3 text-slate-800">
           <div class="font-medium">{{ t.counterparty or msg_text or '(bez popisu)' }}</div>
@@ -67,19 +71,22 @@
         </td>
         <td class="px-4 py-3" onclick="event.stopPropagation();">
           <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center flex-wrap" onsubmit="return submitCategorize(event, this, {{ t.id }});">
-            <select name="category" id="category-{{ t.id }}" data-direction="{{ 'income' if t.is_income else 'expense' }}" class="border rounded px-2 py-1 text-xs bg-white" onchange="onCategorySelect(this, 'relevant-{{ t.id }}')">
+            <select name="category" id="category-{{ t.id }}" data-direction="{{ 'income' if t.is_income else 'expense' }}" class="border rounded px-2 py-1 text-xs bg-white" onchange="onCategorySelect(this, 'relevant-{{ t.id }}', {{ t.id }})">
               <option value="">– kategorie –</option>
               {% for c in categories %}
               <option value="{{ c.name }}" data-type="{{ c.category_type }}" data-relevant="{{ '1' if c.default_tax_relevant else '0' }}"
-                {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>
+                {% if c.name == selected_name %}selected{% endif %}>{{ c.name }}</option>
               {% endfor %}
             </select>
             <label class="flex items-center gap-1 text-[11px] text-slate-500 whitespace-nowrap">
-              <input type="checkbox" id="relevant-{{ t.id }}" name="tax_relevant" value="1" {% if t.tax_relevant %}checked{% endif %} onchange="onRelevantToggle(this, 'category-{{ t.id }}')">
+              <input type="checkbox" id="relevant-{{ t.id }}" name="tax_relevant" value="1" {% if relevant_checked %}checked{% endif %} onchange="onRelevantToggle(this, 'category-{{ t.id }}')">
               daň. relevantní
             </label>
             <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">OK</button>
           </form>
+          {% if not t.category and t.suggested_category %}
+          <div class="text-[11px] text-orange-600 mt-1" id="hint-{{ t.id }}">navrženo dle historie – potvrď nebo uprav</div>
+          {% endif %}
           {% if t.bank_category %}
           <div class="text-[11px] text-slate-400 mt-1">dle banky: {{ t.bank_category }}</div>
           {% endif %}
@@ -163,11 +170,13 @@ function filterCategorySelect(selectEl, relevantChecked) {
   });
 }
 
-function onCategorySelect(sel, checkboxId) {
+function onCategorySelect(sel, checkboxId, tId) {
   var opt = sel.options[sel.selectedIndex];
   if (!opt || !opt.value) return;
   var cb = document.getElementById(checkboxId);
   if (cb) cb.checked = (opt.getAttribute('data-relevant') === '1');
+  var hint = document.getElementById('hint-' + tId);
+  if (hint) hint.remove();
 }
 
 function onRelevantToggle(cb, selectId) {
@@ -190,9 +199,14 @@ function submitCategorize(evt, form, tId) {
       var hasCategory = !!select.value;
       var row = document.getElementById('row-' + tId);
       if (row) {
-        row.classList.remove('bg-green-50', 'hover:bg-green-100', 'bg-red-50', 'hover:bg-red-100');
+        var hadSuggestion = row.getAttribute('data-has-suggestion') === '1';
+        row.classList.remove('bg-green-50', 'hover:bg-green-100', 'bg-red-50', 'hover:bg-red-100', 'bg-orange-50', 'hover:bg-orange-100');
         if (hasCategory) {
           row.classList.add('bg-green-50', 'hover:bg-green-100');
+          var hint = document.getElementById('hint-' + tId);
+          if (hint) hint.remove();
+        } else if (hadSuggestion) {
+          row.classList.add('bg-orange-50', 'hover:bg-orange-100');
         } else {
           row.classList.add('bg-red-50', 'hover:bg-red-100');
         }
