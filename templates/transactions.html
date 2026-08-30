@@ -127,10 +127,14 @@
             </form>
             {% if t.document_url %}<a href="{{ t.document_url }}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline text-xs">Otevřít doklad ↗</a>{% endif %}
             {% if t.source_type != 'bank' %}
-            <form method="post" action="/transactions/{{ t.id }}/delete" onsubmit="return confirm('Smazat tuto ručně přidanou transakci?');" class="ml-auto">
-              <input type="hidden" name="next" value="/transactions">
-              <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium">Smazat transakci</button>
-            </form>
+            <div class="flex items-center gap-3 ml-auto">
+              <a href="/transactions/{{ t.id }}/edit" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium">Upravit</a>
+              <a href="/transactions/{{ t.id }}/duplicate" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium">Vytvořit kopii</a>
+              <form method="post" action="/transactions/{{ t.id }}/delete" onsubmit="return confirm('Smazat tuto ručně přidanou transakci?');">
+                <input type="hidden" name="next" value="/transactions">
+                <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-medium">Smazat transakci</button>
+              </form>
+            </div>
             {% endif %}
           </div>
         </td>

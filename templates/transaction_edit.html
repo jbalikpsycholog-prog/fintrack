@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-bold text-slate-800">{{ page_title }}</h1>
+  {% if mode == 'duplicate' %}
+  <p class="text-slate-500 text-sm">Vytváříš novou transakci jako kopii této – uprav datum, popis nebo cokoliv dalšího a ulož jako novou položku. Původní transakce zůstane beze změny.</p>
+  {% else %}
+  <p class="text-slate-500 text-sm">Úprava ručně přidané transakce.</p>
+  {% endif %}
+</div>
+
+<div class="bg-white rounded-xl shadow-sm p-6 mb-6 max-w-2xl">
+  <form method="post" action="{{ form_action }}" class="space-y-4">
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Zdroj</label>
+      <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="source_type" value="cash" {% if t.source_type == 'cash' %}checked{% endif %}> Hotovost
+        </label>
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="source_type" value="nonmonetary" {% if t.source_type == 'nonmonetary' %}checked{% endif %}> Nepeněžní položka
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Typ</label>
+      <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="direction" value="expense" {% if t.direction == 'expense' %}checked{% endif %}> Výdaj
+        </label>
+        <label class="flex items-center gap-1.5">
+          <input type="radio" name="direction" value="income" {% if t.direction == 'income' %}checked{% endif %}> Příjem
+        </label>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Datum <span class="text-red-500">*</span></label>
+        <input type="date" name="date" value="{{ t.date }}" required
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Částka (Kč) <span class="text-red-500">*</span></label>
+        <input type="number" name="amount" step="0.01" min="0" required value="{{ t.amount }}"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Popis <span class="text-red-500">*</span></label>
+      <input type="text" name="description" required value="{{ t.description }}"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Protistrana <span class="text-slate-400 font-normal text-xs">(komu/od koho – u nepeněžní položky nech prázdné)</span></label>
+      <input type="text" name="counterparty" value="{{ t.counterparty }}"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Kategorie</label>
+        <select name="category" id="category-select" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" onchange="onCategorySelectEdit(this)">
+          <option value="">– kategorie –</option>
+          {% for c in categories %}
+          <option value="{{ c.name }}" data-type="{{ c.category_type }}" data-relevant="{{ '1' if c.default_tax_relevant else '0' }}" {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Odkaz na doklad <span class="text-slate-400 font-normal text-xs">(volitelné)</span></label>
+        <input type="url" name="document_url" value="{{ t.document_url }}"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+    </div>
+
+    <div>
+      <label class="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" id="tax_relevant_cb" name="tax_relevant" value="1" {% if t.tax_relevant %}checked{% endif %}>
+        Daňově relevantní
+      </label>
+    </div>
+
+    <div class="flex gap-3">
+      <button type="submit" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium text-sm transition-colors">
+        {{ submit_label }}
+      </button>
+      <a href="/transactions" class="px-4 py-2.5 rounded-lg font-medium text-sm text-slate-500 hover:bg-slate-100 text-center">Zrušit</a>
+    </div>
+  </form>
+</div>
+
+<script>
+function filterCategoriesEdit(clearIfHidden) {
+  var checked = document.querySelector('input[name="direction"]:checked');
+  var relevantCb = document.getElementById('tax_relevant_cb');
+  if (!checked) return;
+  var direction = checked.value;
+  var relevantChecked = relevantCb ? relevantCb.checked : true;
+  var select = document.getElementById('category-select');
+  var options = select.querySelectorAll('option[data-type]');
+  options.forEach(function (o) {
+    var typeOk = (o.getAttribute('data-type') === direction);
+    var relOk = (o.getAttribute('data-relevant') === (relevantChecked ? '1' : '0'));
+    o.hidden = !(typeOk && relOk);
+  });
+  var selectedOpt = select.options[select.selectedIndex];
+  if (clearIfHidden && selectedOpt && selectedOpt.hidden) {
+    select.value = "";
+  }
+}
+document.querySelectorAll('input[name="direction"]').forEach(function (r) {
+  r.addEventListener('change', function () { filterCategoriesEdit(true); });
+});
+var relevantCbEl = document.getElementById('tax_relevant_cb');
+if (relevantCbEl) {
+  relevantCbEl.addEventListener('change', function () { filterCategoriesEdit(true); });
+}
+// Pri prvnim vykresleni stranky nechceme smazat uz predvyplnenou kategorii,
+// i kdyz zrovna neodpovida aktualnimu filtru (typ/relevance) - jen ji necha
+// skrytou v nabidce, ale zachovanou jako vybranou.
+filterCategoriesEdit(false);
+
+function onCategorySelectEdit(sel) {
+  var opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  var cb = document.getElementById('tax_relevant_cb');
+  if (cb) {
+    cb.checked = (opt.getAttribute('data-relevant') === '1');
+    filterCategoriesEdit(true);
+  }
+}
+</script>
+{% endblock %}
