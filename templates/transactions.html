@@ -52,7 +52,7 @@
     <tbody>
       {% for t in transactions %}
       {% set msg_text = t.message_for_me or t.message_for_recipient or t.note or t.description %}
-      <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="var d=document.getElementById('detail-{{ t.id }}'); d.classList.toggle('hidden'); var i=document.getElementById('arrow-{{ t.id }}'); i.textContent = d.classList.contains('hidden') ? '▸' : '▾';">
+      <tr id="row-{{ t.id }}" class="tx-row border-b border-slate-50 cursor-pointer {% if t.category %}bg-green-50 hover:bg-green-100{% else %}bg-red-50 hover:bg-red-100{% endif %}" onclick="var d=document.getElementById('detail-{{ t.id }}'); d.classList.toggle('hidden'); var i=document.getElementById('arrow-{{ t.id }}'); i.textContent = d.classList.contains('hidden') ? '▸' : '▾';">
         <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ t.date }}</td>
         <td class="px-4 py-3 text-slate-800">
           <div class="font-medium">{{ t.counterparty or msg_text or '(bez popisu)' }}</div>
@@ -66,17 +66,16 @@
           {% endif %}
         </td>
         <td class="px-4 py-3" onclick="event.stopPropagation();">
-          <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center flex-wrap">
-            <select name="category" class="border rounded px-2 py-1 text-xs bg-white" onchange="onCategorySelect(this, 'relevant-{{ t.id }}')">
+          <form method="post" action="/transactions/{{ t.id }}/categorize" class="flex gap-1 items-center flex-wrap" onsubmit="return submitCategorize(event, this, {{ t.id }});">
+            <select name="category" id="category-{{ t.id }}" data-direction="{{ 'income' if t.is_income else 'expense' }}" class="border rounded px-2 py-1 text-xs bg-white" onchange="onCategorySelect(this, 'relevant-{{ t.id }}')">
               <option value="">– kategorie –</option>
               {% for c in categories %}
-              <option value="{{ c.name }}" data-relevant="{{ '1' if c.default_tax_relevant else '0' }}"
-                {% if c.name == t.category %}selected{% endif %}
-                {% if c.category_type != ('income' if t.is_income else 'expense') and c.name != t.category %}hidden{% endif %}>{{ c.name }}</option>
+              <option value="{{ c.name }}" data-type="{{ c.category_type }}" data-relevant="{{ '1' if c.default_tax_relevant else '0' }}"
+                {% if c.name == t.category %}selected{% endif %}>{{ c.name }}</option>
               {% endfor %}
             </select>
             <label class="flex items-center gap-1 text-[11px] text-slate-500 whitespace-nowrap">
-              <input type="checkbox" id="relevant-{{ t.id }}" name="tax_relevant" value="1" {% if t.tax_relevant %}checked{% endif %}>
+              <input type="checkbox" id="relevant-{{ t.id }}" name="tax_relevant" value="1" {% if t.tax_relevant %}checked{% endif %} onchange="onRelevantToggle(this, 'category-{{ t.id }}')">
               daň. relevantní
             </label>
             <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">OK</button>
@@ -154,11 +153,61 @@
 </div>
 
 <script>
+function filterCategorySelect(selectEl, relevantChecked) {
+  var direction = selectEl.getAttribute('data-direction');
+  var options = selectEl.querySelectorAll('option[data-type]');
+  options.forEach(function (o) {
+    var typeOk = (o.getAttribute('data-type') === direction);
+    var relOk = (o.getAttribute('data-relevant') === (relevantChecked ? '1' : '0'));
+    o.hidden = !(typeOk && relOk);
+  });
+}
+
 function onCategorySelect(sel, checkboxId) {
   var opt = sel.options[sel.selectedIndex];
   if (!opt || !opt.value) return;
   var cb = document.getElementById(checkboxId);
   if (cb) cb.checked = (opt.getAttribute('data-relevant') === '1');
+}
+
+function onRelevantToggle(cb, selectId) {
+  var sel = document.getElementById(selectId);
+  if (sel) filterCategorySelect(sel, cb.checked);
+}
+
+document.querySelectorAll('select[data-direction]').forEach(function (sel) {
+  var cb = document.getElementById(sel.id.replace('category-', 'relevant-'));
+  filterCategorySelect(sel, cb ? cb.checked : true);
+});
+
+function submitCategorize(evt, form, tId) {
+  evt.preventDefault();
+  var fd = new FormData(form);
+  fetch(form.action, { method: 'POST', body: fd })
+    .then(function (resp) {
+      if (!resp.ok) throw new Error('save failed');
+      var select = form.querySelector('select[name="category"]');
+      var hasCategory = !!select.value;
+      var row = document.getElementById('row-' + tId);
+      if (row) {
+        row.classList.remove('bg-green-50', 'hover:bg-green-100', 'bg-red-50', 'hover:bg-red-100');
+        if (hasCategory) {
+          row.classList.add('bg-green-50', 'hover:bg-green-100');
+        } else {
+          row.classList.add('bg-red-50', 'hover:bg-red-100');
+        }
+      }
+      var rows = Array.prototype.slice.call(document.querySelectorAll('tr.tx-row'));
+      var idx = rows.findIndex(function (r) { return r.id === 'row-' + tId; });
+      if (idx >= 0 && idx < rows.length - 1) {
+        var nextSelect = rows[idx + 1].querySelector('select[name="category"]');
+        if (nextSelect) nextSelect.focus();
+      }
+    })
+    .catch(function () {
+      form.submit();
+    });
+  return false;
 }
 </script>
 {% endblock %}

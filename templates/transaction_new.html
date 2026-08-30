@@ -137,12 +137,16 @@
 <script>
 function filterCategoriesByDirection() {
   var checked = document.querySelector('input[name="direction"]:checked');
+  var relevantCb = document.getElementById('tax_relevant_cb');
   if (!checked) return;
   var direction = checked.value;
+  var relevantChecked = relevantCb ? relevantCb.checked : true;
   var select = document.getElementById('category-select');
   var options = select.querySelectorAll('option[data-type]');
   options.forEach(function (o) {
-    o.hidden = (o.getAttribute('data-type') !== direction);
+    var typeOk = (o.getAttribute('data-type') === direction);
+    var relOk = (o.getAttribute('data-relevant') === (relevantChecked ? '1' : '0'));
+    o.hidden = !(typeOk && relOk);
   });
   var selectedOpt = select.options[select.selectedIndex];
   if (selectedOpt && selectedOpt.hidden) {
@@ -152,13 +156,20 @@ function filterCategoriesByDirection() {
 document.querySelectorAll('input[name="direction"]').forEach(function (r) {
   r.addEventListener('change', filterCategoriesByDirection);
 });
+var relevantCbEl = document.getElementById('tax_relevant_cb');
+if (relevantCbEl) {
+  relevantCbEl.addEventListener('change', filterCategoriesByDirection);
+}
 filterCategoriesByDirection();
 
 function onCategorySelectNew(sel) {
   var opt = sel.options[sel.selectedIndex];
   if (!opt || !opt.value) return;
   var cb = document.getElementById('tax_relevant_cb');
-  if (cb) cb.checked = (opt.getAttribute('data-relevant') === '1');
+  if (cb) {
+    cb.checked = (opt.getAttribute('data-relevant') === '1');
+    filterCategoriesByDirection();
+  }
 }
 </script>
 {% endblock %}
