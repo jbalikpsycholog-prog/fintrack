@@ -376,6 +376,147 @@ async def delete_transaction(t_id: int, next: str = Form("/transactions")):
         db.close()
 
 
+def _manual_tx_form_context(db, t: Transaction):
+    """Spolecny kontext pro predvyplneni formulare uprav/kopie z existujici
+    rucni (cash/nonmonetary) transakce."""
+    return {
+        "id": t.id,
+        "source_type": t.source_type or "cash",
+        "direction": "income" if t.is_income else "expense",
+        "date": t.date or "",
+        "amount": abs(t.amount) if t.amount else 0,
+        "description": t.description or "",
+        "counterparty": t.counterparty_name or "",
+        "category": cat_name(db, t.category_id),
+        "document_url": t.document_url or "",
+        "tax_relevant": t.tax_relevant,
+    }
+
+
+def _parse_manual_tx_form(source_type, direction, date, amount, category, db):
+    if source_type not in ("cash", "nonmonetary"):
+        source_type = "cash"
+    is_inc = direction == "income"
+    signed_amount = abs(amount) if is_inc else -abs(amount)
+    try:
+        d = datetime.strptime(date, "%Y-%m-%d")
+        iy, im = d.year, d.month
+    except Exception:
+        now = datetime.now()
+        iy, im = now.year, now.month
+    cat_id = None
+    if category:
+        c = db.query(Category).filter(Category.name == category).first()
+        cat_id = c.id if c else None
+    return source_type, is_inc, signed_amount, iy, im, cat_id
+
+
+@app.get("/transactions/{t_id}/edit", response_class=HTMLResponse)
+async def edit_transaction_page(t_id: int):
+    db = SessionLocal()
+    try:
+        t = db.query(Transaction).filter(Transaction.id == t_id).first()
+        if not t or t.source_type == "bank":
+            return RedirectResponse(url="/transactions", status_code=303)
+        cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
+        return render("transaction_edit.html", mode="edit",
+                      t=_manual_tx_form_context(db, t), categories=cats,
+                      form_action=f"/transactions/{t.id}/edit", submit_label="Uložit změny",
+                      page_title="Upravit transakci")
+    finally:
+        db.close()
+
+
+@app.post("/transactions/{t_id}/edit")
+async def update_transaction(
+    t_id: int,
+    source_type: str = Form(...),
+    direction: str = Form(...),
+    date: str = Form(...),
+    amount: float = Form(...),
+    category: str = Form(""),
+    counterparty: str = Form(""),
+    description: str = Form(""),
+    tax_relevant: str = Form(""),
+    document_url: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        t = db.query(Transaction).filter(Transaction.id == t_id).first()
+        if not t or t.source_type == "bank":
+            return RedirectResponse(url="/transactions", status_code=303)
+        source_type, is_inc, signed_amount, iy, im, cat_id = _parse_manual_tx_form(
+            source_type, direction, date, amount, category, db)
+        t.source_type = source_type
+        t.is_income = is_inc
+        t.amount = signed_amount
+        t.date = date
+        t.year, t.month = iy, im
+        t.category_id = cat_id
+        t.tax_relevant = bool(tax_relevant)
+        t.counterparty_name = counterparty.strip() or None
+        t.description = description.strip() or None
+        t.document_url = document_url.strip() or None
+        db.commit()
+        return RedirectResponse(url="/transactions?msg=Transakce+byla+upravena.", status_code=303)
+    finally:
+        db.close()
+
+
+@app.get("/transactions/{t_id}/duplicate", response_class=HTMLResponse)
+async def duplicate_transaction_page(t_id: int):
+    db = SessionLocal()
+    try:
+        t = db.query(Transaction).filter(Transaction.id == t_id).first()
+        if not t or t.source_type == "bank":
+            return RedirectResponse(url="/transactions", status_code=303)
+        cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
+        return render("transaction_edit.html", mode="duplicate",
+                      t=_manual_tx_form_context(db, t), categories=cats,
+                      form_action=f"/transactions/{t.id}/duplicate", submit_label="Vytvořit kopii",
+                      page_title="Vytvořit kopii transakce")
+    finally:
+        db.close()
+
+
+@app.post("/transactions/{t_id}/duplicate")
+async def duplicate_transaction(
+    t_id: int,
+    source_type: str = Form(...),
+    direction: str = Form(...),
+    date: str = Form(...),
+    amount: float = Form(...),
+    category: str = Form(""),
+    counterparty: str = Form(""),
+    description: str = Form(""),
+    tax_relevant: str = Form(""),
+    document_url: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        orig = db.query(Transaction).filter(Transaction.id == t_id).first()
+        if not orig or orig.source_type == "bank":
+            return RedirectResponse(url="/transactions", status_code=303)
+        source_type, is_inc, signed_amount, iy, im, cat_id = _parse_manual_tx_form(
+            source_type, direction, date, amount, category, db)
+        t = Transaction(
+            date=date, year=iy, month=im,
+            amount=signed_amount, currency=orig.currency or "CZK",
+            is_income=is_inc,
+            category_id=cat_id,
+            tax_relevant=bool(tax_relevant),
+            source_type=source_type,
+            counterparty_name=counterparty.strip() or None,
+            description=description.strip() or None,
+            document_url=document_url.strip() or None,
+        )
+        db.add(t)
+        db.commit()
+        return RedirectResponse(url="/transactions?msg=Transakce+byla+zkop%C3%ADrov%C3%A1na.", status_code=303)
+    finally:
+        db.close()
+
+
 @app.get("/transactions", response_class=HTMLResponse)
 async def transactions_page(
     request: Request,
@@ -383,6 +524,7 @@ async def transactions_page(
     search: Optional[str] = None,
     month: Optional[str] = None,
     page: int = 1,
+    msg: Optional[str] = None,
 ):
     db = SessionLocal()
     try:
@@ -455,7 +597,7 @@ async def transactions_page(
                       transactions=t_list, categories=cats,
                       current_filter=t_type, search=search or "",
                       months=months_list, selected_month=month or "",
-                      page=page, total_pages=total_pages, total_count=total_count, msg=None)
+                      page=page, total_pages=total_pages, total_count=total_count, msg=msg)
     finally:
         db.close()
 
