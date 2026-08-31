@@ -87,8 +87,14 @@ def cat_name(db, cat_id):
 
 def _match_key(t: Transaction):
     """Klic pro parovani navrhu: normalizovany popis + typ transakce.
-    Prazdny popis nebo typ se nikdy neparuje (predejde nesmyslnym shodam)."""
+    Nektere platby (typicky od institucí jako VZP) nemaji v popisu (zprava
+    pro me/prijemce/poznamka) vubec nic - banka u nich vyplnuje jen nazev
+    protiuctu. V takovem pripade se pro parovani pouzije misto prazdneho
+    popisu nazev protistrany. Kdyz je prazdne i to, nebo chybi typ transakce,
+    se nikdy neparuje (predejde nesmyslnym shodam napric ruznymi platbami)."""
     desc = (t.description or "").strip().lower()
+    if not desc:
+        desc = (t.counterparty_name or "").strip().lower()
     ttype = (t.transaction_type or "").strip().lower()
     if not desc or not ttype:
         return None
@@ -98,11 +104,12 @@ def _match_key(t: Transaction):
 def recompute_suggestions(db: Session):
     """Pro vsechny dosud nezarazene bankovni transakce (category_id je prazdne)
     spocita navrh kategorie + danove relevance podle historie jiz zarazenych
-    bankovnich transakci se stejnym popisem a typem transakce (prichozi/odchozi
-    uhrada apod.). Pri rozporu v historii (ruzne kategorie u stejneho popisu+typu)
-    se pouzije nejcastejsi shoda. Nikdy nezapisuje do category_id/tax_relevant -
-    jen do suggested_category_id/suggested_tax_relevant, coz je pouze doporuceni,
-    ktere uzivatel bud potvrdi (OK), nebo si vybere jinak."""
+    bankovnich transakci se stejnym identifikacnim textem (popis, nebo pokud je
+    prazdny tak nazev protistrany - viz _match_key) a typem transakce
+    (prichozi/odchozi uhrada apod.). Pri rozporu v historii (ruzne kategorie u
+    stejneho klice) se pouzije nejcastejsi shoda. Nikdy nezapisuje do
+    category_id/tax_relevant - jen do suggested_category_id/suggested_tax_relevant,
+    coz je pouze doporuceni, ktere uzivatel bud potvrdi (OK), nebo si vybere jinak."""
     unclassified = db.query(Transaction).filter(
         Transaction.category_id.is_(None),
         Transaction.source_type == "bank",
