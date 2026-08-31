@@ -523,6 +523,8 @@ async def transactions_page(
     t_type: Optional[str] = None,
     search: Optional[str] = None,
     month: Optional[str] = None,
+    category: Optional[str] = None,
+    has_doc: Optional[str] = None,
     page: int = 1,
     msg: Optional[str] = None,
 ):
@@ -548,12 +550,26 @@ async def transactions_page(
                 q = q.filter(Transaction.year == int(parts[0]), Transaction.month == int(parts[1]))
             except Exception:
                 pass
+        if category:
+            cat_obj = db.query(Category).filter(Category.name == category).first()
+            q = q.filter(Transaction.category_id == (cat_obj.id if cat_obj else -1))
+        if has_doc == "yes":
+            q = q.filter(Transaction.document_url.isnot(None), Transaction.document_url != "")
+        elif has_doc == "no":
+            q = q.filter(
+                (Transaction.document_url.is_(None)) | (Transaction.document_url == "")
+            )
         q = q.order_by(Transaction.date.desc())
-        total_count = q.count()
+        # Nacteme vsechny odpovidajici transakce najednou - u osobniho pouziti
+        # jde o male mnozstvi radku a potrebujeme z nich spocitat soucet za
+        # CELY filtr (ne jen za aktualni stranku), proto strankujeme az v Pythonu.
+        all_matching = q.all()
+        total_count = len(all_matching)
+        total_sum = sum(t.amount for t in all_matching)
         per_page = 50
         total_pages = max(1, (total_count + per_page - 1) // per_page)
         page = max(1, min(page, total_pages))
-        txns = q.offset((page - 1) * per_page).limit(per_page).all()
+        txns = all_matching[(page - 1) * per_page: page * per_page]
         cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
         all_months_q = db.query(Transaction.year, Transaction.month).distinct().order_by(
             Transaction.year.desc(), Transaction.month.desc()).all()
@@ -597,6 +613,8 @@ async def transactions_page(
                       transactions=t_list, categories=cats,
                       current_filter=t_type, search=search or "",
                       months=months_list, selected_month=month or "",
+                      selected_category=category or "", selected_has_doc=has_doc or "",
+                      total_sum=total_sum,
                       page=page, total_pages=total_pages, total_count=total_count, msg=msg)
     finally:
         db.close()
