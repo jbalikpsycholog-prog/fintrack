@@ -35,8 +35,13 @@ REM Aktivace virtualniho prostredi
 call .venv\Scripts\activate.bat
 
 REM Instalace zavislosti
+REM POZN.: pouzivame "python -m pip", ne primo "pip.exe" - na nekterych
+REM pocitacich (firemni/IT sprava, Device Guard/WDAC politika) je pip.exe
+REM jako samostatny spustitelny soubor blokovan, zatimco python.exe povoleny
+REM je. "python -m pip" spusti pip jako soucast jiz povoleneho python.exe,
+REM takze se tomuto blokovani vyhne.
 echo Instaluji zavislosti (muze trvat par minut)...
-pip install -r requirements.txt --quiet --upgrade
+%PYTHON% -m pip install -r requirements.txt --quiet --upgrade
 
 if %errorlevel% neq 0 (
     echo [CHYBA] Nepodarilo se nainstalovat zavislosti!
