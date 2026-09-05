@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tisk transakcí – FinTrack OSVČ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; }
+      table { page-break-inside: auto; }
+      tr { page-break-inside: avoid; }
+      thead { display: table-header-group; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+  <div class="no-print bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0">
+    <a href="/transactions" class="text-sm text-gray-500 hover:text-gray-800">← Zpět na transakce</a>
+    <button onclick="window.print()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">🖨 Vytisknout</button>
+  </div>
+
+  <div class="max-w-4xl mx-auto px-6 py-8 print:px-0 print:py-0">
+    <h1 class="text-xl font-bold text-gray-800">💼 FinTrack OSVČ – Transakce</h1>
+    <p class="text-sm text-gray-500 mt-1">Filtr: {{ filter_description }}</p>
+    <p class="text-xs text-gray-400 mt-1">Vytištěno: {{ generated_at }} · Počet transakcí: {{ total_count }}</p>
+
+    <table class="w-full text-sm mt-5 border-collapse">
+      <thead>
+        <tr class="border-b-2 border-gray-800">
+          <th class="text-left py-2 pr-3 font-semibold text-gray-700">Datum</th>
+          <th class="text-left py-2 pr-3 font-semibold text-gray-700">Popis</th>
+          <th class="text-left py-2 pr-3 font-semibold text-gray-700">Kategorie</th>
+          <th class="text-left py-2 pr-3 font-semibold text-gray-700">Daň. relevantní</th>
+          <th class="text-right py-2 pl-3 font-semibold text-gray-700">Částka</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in transactions %}
+        <tr class="border-b border-gray-200">
+          <td class="py-1.5 pr-3 whitespace-nowrap text-gray-700">{{ t.date }}</td>
+          <td class="py-1.5 pr-3 text-gray-800">{{ t.description or "(bez popisu)" }}</td>
+          <td class="py-1.5 pr-3 text-gray-600">{{ t.category or "—" }}</td>
+          <td class="py-1.5 pr-3 text-gray-600">{{ "Ano" if t.tax_relevant else "Ne" }}</td>
+          <td class="py-1.5 pl-3 text-right whitespace-nowrap {% if t.amount >= 0 %}text-green-700{% else %}text-red-700{% endif %}">{{ t.amount|czk }} {{ t.currency }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="py-6 text-center text-gray-400">Žádné transakce neodpovídají zvolenému filtru.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="border-t-2 border-gray-800 font-semibold">
+          <td colspan="4" class="py-2 pr-3 text-right text-gray-700">Součet:</td>
+          <td class="py-2 pl-3 text-right whitespace-nowrap {% if total_sum >= 0 %}text-green-700{% else %}text-red-700{% endif %}">{{ total_sum|czk }} Kč</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+</body>
+</html>

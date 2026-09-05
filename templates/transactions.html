@@ -55,7 +55,11 @@
 
 <div class="bg-white rounded-xl shadow-sm border border-slate-100 px-4 py-3 mb-4 flex items-center justify-between flex-wrap gap-2 text-sm">
   <span class="text-slate-500">Součet za aktuální filtr ({{ total_count }} transakcí):</span>
-  <span class="font-semibold {% if total_sum >= 0 %}text-green-600{% else %}text-red-600{% endif %}">{{ total_sum|czk }} Kč</span>
+  <div class="flex items-center gap-3">
+    <span class="font-semibold {% if total_sum >= 0 %}text-green-600{% else %}text-red-600{% endif %}">{{ total_sum|czk }} Kč</span>
+    {% set print_qs = ("t_type=" ~ current_filter ~ ns.qs) if current_filter else (ns.qs[1:] if ns.qs else "") %}
+    <a href="/transactions/print{% if print_qs %}?{{ print_qs }}{% endif %}" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">🖨 Tisk</a>
+  </div>
 </div>
 
 <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden overflow-x-auto">
