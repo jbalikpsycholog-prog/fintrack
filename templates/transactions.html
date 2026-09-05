@@ -82,7 +82,7 @@
         <td class="px-4 py-3 text-slate-800">
           <div class="font-medium flex items-center gap-1.5">
             {{ t.counterparty or msg_text or '(bez popisu)' }}
-            <span id="docbadge-{{ t.id }}" title="K transakci je uložen odkaz na doklad" class="text-xs {% if not t.document_url %}hidden{% endif %}">📎</span>
+            <span id="docbadge-{{ t.id }}" title="K transakci je uložen odkaz na doklad" class="text-lg leading-none {% if not t.document_url %}hidden{% endif %}">📎</span>
           </div>
           {% if msg_text and t.counterparty %}
           <div class="text-xs text-slate-400">{{ msg_text }}</div>
