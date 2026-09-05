@@ -166,6 +166,7 @@ async def dashboard(request: Request):
         total_income = sum(t.amount for t in txns if t.is_income and t.tax_relevant)
         total_expense = sum(abs(t.amount) for t in txns if not t.is_income and t.tax_relevant)
         saldo = total_income - total_expense
+        expense_pct = (total_expense / total_income * 100) if total_income else None
         unclassified_count = db.query(Transaction).filter(
             Transaction.category_id == None, Transaction.tax_relevant == True).count()
         cats = db.query(Category).filter(Category.is_active == True).all()
@@ -183,6 +184,7 @@ async def dashboard(request: Request):
                        for r in recent]
         return render("dashboard.html",
                       total_income=total_income, total_expense=total_expense, saldo=saldo,
+                      expense_pct=expense_pct,
                       unclassified_count=unclassified_count, category_expenses=cat_expenses,
                       recent_imports=recent_list, current_year=cy, current_month=now.month)
     finally:
@@ -524,6 +526,50 @@ async def duplicate_transaction(
         db.close()
 
 
+def _build_transactions_query(db, t_type=None, search=None, month=None, category=None, has_doc=None):
+    """Sdilena logika filtrovani transakci - pouziva jak strankovany vypis na
+    /transactions, tak nestrankovany tiskovy pohled na /transactions/print,
+    aby oba vzdy vraceli presne stejnou sadu radku pro stejne filtry."""
+    q = db.query(Transaction)
+    if t_type == "unclassified":
+        q = q.filter(Transaction.category_id == None, Transaction.tax_relevant == True)
+    elif t_type == "income":
+        q = q.filter(Transaction.is_income == True, Transaction.tax_relevant == True)
+    elif t_type == "expense":
+        q = q.filter(Transaction.is_income == False, Transaction.tax_relevant == True)
+    elif t_type == "not_relevant":
+        q = q.filter(Transaction.tax_relevant == False)
+    if search:
+        q = q.filter(
+            (Transaction.description.ilike(f"%{search}%")) |
+            (Transaction.counterparty_name.ilike(f"%{search}%"))
+        )
+    if month:
+        try:
+            parts = month.split("-")
+            q = q.filter(Transaction.year == int(parts[0]), Transaction.month == int(parts[1]))
+        except Exception:
+            pass
+    if category:
+        cat_obj = db.query(Category).filter(Category.name == category).first()
+        q = q.filter(Transaction.category_id == (cat_obj.id if cat_obj else -1))
+    if has_doc == "yes":
+        q = q.filter(Transaction.document_url.isnot(None), Transaction.document_url != "")
+    elif has_doc == "no":
+        q = q.filter(
+            (Transaction.document_url.is_(None)) | (Transaction.document_url == "")
+        )
+    return q.order_by(Transaction.date.desc())
+
+
+TRANSACTION_TAB_LABELS = {
+    "unclassified": "Nezařazené",
+    "income": "Příjmy",
+    "expense": "Výdaje",
+    "not_relevant": "Daňově nerelevantní",
+}
+
+
 @app.get("/transactions", response_class=HTMLResponse)
 async def transactions_page(
     request: Request,
@@ -537,36 +583,7 @@ async def transactions_page(
 ):
     db = SessionLocal()
     try:
-        q = db.query(Transaction)
-        if t_type == "unclassified":
-            q = q.filter(Transaction.category_id == None, Transaction.tax_relevant == True)
-        elif t_type == "income":
-            q = q.filter(Transaction.is_income == True, Transaction.tax_relevant == True)
-        elif t_type == "expense":
-            q = q.filter(Transaction.is_income == False, Transaction.tax_relevant == True)
-        elif t_type == "not_relevant":
-            q = q.filter(Transaction.tax_relevant == False)
-        if search:
-            q = q.filter(
-                (Transaction.description.ilike(f"%{search}%")) |
-                (Transaction.counterparty_name.ilike(f"%{search}%"))
-            )
-        if month:
-            try:
-                parts = month.split("-")
-                q = q.filter(Transaction.year == int(parts[0]), Transaction.month == int(parts[1]))
-            except Exception:
-                pass
-        if category:
-            cat_obj = db.query(Category).filter(Category.name == category).first()
-            q = q.filter(Transaction.category_id == (cat_obj.id if cat_obj else -1))
-        if has_doc == "yes":
-            q = q.filter(Transaction.document_url.isnot(None), Transaction.document_url != "")
-        elif has_doc == "no":
-            q = q.filter(
-                (Transaction.document_url.is_(None)) | (Transaction.document_url == "")
-            )
-        q = q.order_by(Transaction.date.desc())
+        q = _build_transactions_query(db, t_type, search, month, category, has_doc)
         # Nacteme vsechny odpovidajici transakce najednou - u osobniho pouziti
         # jde o male mnozstvi radku a potrebujeme z nich spocitat soucet za
         # CELY filtr (ne jen za aktualni stranku), proto strankujeme az v Pythonu.
@@ -623,6 +640,53 @@ async def transactions_page(
                       selected_category=category or "", selected_has_doc=has_doc or "",
                       total_sum=total_sum,
                       page=page, total_pages=total_pages, total_count=total_count, msg=msg)
+    finally:
+        db.close()
+
+
+@app.get("/transactions/print", response_class=HTMLResponse)
+async def transactions_print(
+    request: Request,
+    t_type: Optional[str] = None,
+    search: Optional[str] = None,
+    month: Optional[str] = None,
+    category: Optional[str] = None,
+    has_doc: Optional[str] = None,
+):
+    db = SessionLocal()
+    try:
+        q = _build_transactions_query(db, t_type, search, month, category, has_doc)
+        all_matching = q.all()
+        total_sum = sum(t.amount for t in all_matching)
+        t_list = []
+        for t in all_matching:
+            msg_text = t.message_for_me or t.message_for_recipient or t.note or t.description
+            t_list.append({
+                "date": t.date,
+                "description": t.counterparty_name or msg_text or "",
+                "category": cat_name(db, t.category_id) or "",
+                "tax_relevant": t.tax_relevant,
+                "amount": t.amount,
+                "currency": t.currency or "CZK",
+            })
+
+        filter_parts = [TRANSACTION_TAB_LABELS.get(t_type, "Vše")]
+        if category:
+            filter_parts.append(f"kategorie: {category}")
+        if month:
+            filter_parts.append(f"měsíc: {month}")
+        if has_doc == "yes":
+            filter_parts.append("s dokladem")
+        elif has_doc == "no":
+            filter_parts.append("bez dokladu")
+        if search:
+            filter_parts.append(f"hledání: „{search}“")
+        filter_description = " · ".join(filter_parts)
+
+        return render("transactions_print.html",
+                      transactions=t_list, total_sum=total_sum, total_count=len(t_list),
+                      filter_description=filter_description,
+                      generated_at=datetime.now().strftime("%d.%m.%Y %H:%M"))
     finally:
         db.close()
 

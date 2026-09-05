@@ -15,6 +15,7 @@ ruce. Ukoncit se da jen pres tu ikonku dole v system tray.
 import os
 import sys
 import time
+import socket
 import threading
 import webbrowser
 
@@ -40,6 +41,22 @@ def log(msg):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 
+def show_message(text, title="FinTrack"):
+    """Zobrazi jednoduche systemove okenko se zpravou (funguje i bez konzole
+    a bez dalsich knihoven - pouziva primo Windows API pres ctypes)."""
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(0, text, title, 0x40)  # MB_ICONINFORMATION
+    except Exception:
+        log("(nepodarilo se zobrazit systemove okenko se zpravou: " + text + ")")
+
+
+def is_port_in_use(host, port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((host, port)) == 0
+
+
 def make_icon_image():
     from PIL import Image, ImageDraw
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
@@ -56,6 +73,22 @@ def main():
 
     log("Startuji FinTrack...")
 
+    # Pokud uz na portu 8000 nekdo posloucha (typicky uz bezici FinTrack -
+    # napr. z predchoziho spusteni, ktere jeste nebylo ukonceno pres ikonku
+    # v system tray), nezakladame druhou, zbytecnou (a nefunkcni, port uz je
+    # obsazeny) instanci. Misto toho proste otevreme prohlizec na tu jiz
+    # bezici a rovnou skoncime - bez druhe ikonky, ktera by jen matla.
+    if is_port_in_use(HOST, PORT):
+        log("Port 8000 uz je obsazeny - FinTrack pravdepodobne uz bezi, jen otevirem prohlizec.")
+        webbrowser.open(URL)
+        show_message(
+            "FinTrack uz běží (najdeš ho jako ikonku dole u hodin) - "
+            "otevírám ho znovu v prohlížeči.\n\n"
+            "Pokud tam žádnou ikonku nevidíš, zkus rozbalit skryté ikonky "
+            "šipkou „^“ vedle hodin."
+        )
+        return
+
     config = uvicorn.Config("main:app", host=HOST, port=PORT, log_level="warning")
     server = uvicorn.Server(config)
 
@@ -67,8 +100,17 @@ def main():
             if server.started:
                 break
             time.sleep(0.25)
-        log("Server bezi, otevirem prohlizec.")
-        webbrowser.open(URL)
+        if server.started:
+            log("Server bezi, otevirem prohlizec.")
+            webbrowser.open(URL)
+        else:
+            log("Server se nepodarilo spustit v ocekavanem case.")
+            show_message(
+                "FinTrack se nepodařilo spustit.\n\n"
+                "Zkus prosím počítač restartovat a spustit FinTrack znovu. "
+                "Pokud problém přetrvá, podívej se do souboru fintrack_tray.log "
+                "vedle aplikace, nebo se ozvi - podíváme se na to spolu."
+            )
 
     threading.Thread(target=open_browser, daemon=True).start()
 
