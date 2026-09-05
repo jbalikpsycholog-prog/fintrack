@@ -24,7 +24,44 @@ jinja_env = Environment(
 )
 
 
-def render(template_name: str, **ctx) -> HTMLResponse:
+def get_selected_year(request: Request) -> int:
+    """Rok, ktery si uzivatel naposledy zvolil v prepinaci roku (ulozeno v
+    cookie) - kdyz zadny neni (prvni navsteva), pouzijeme aktualni kalendarni
+    rok."""
+    raw = request.cookies.get("selected_year")
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return datetime.now().year
+
+
+def get_available_years(db) -> list:
+    """Roky nabizene v prepinaci - vsechny roky, ve kterych uz existuji
+    transakce, plus aktualni kalendarni rok a rok nasledujici (aby slo
+    prepnout i do noveho roku jeste pred jeho prvni transakci)."""
+    now_year = datetime.now().year
+    years = set(r[0] for r in db.query(Transaction.year).distinct().all() if r[0])
+    years.add(now_year)
+    years.add(now_year + 1)
+    return sorted(years, reverse=True)
+
+
+def render(template_name: str, request: Optional[Request] = None, **ctx) -> HTMLResponse:
+    # Kdyz route preda "request", automaticky doplnime kontext pro prepinac
+    # roku v horni liste (base.html) - kazda jednotliva stranka ho tak
+    # nemusi rucne pocitat a predavat sama, staci ji rict, ktery pozadavek
+    # se prave obsluhuje.
+    if request is not None:
+        ctx.setdefault("selected_year", get_selected_year(request))
+        db_years = SessionLocal()
+        try:
+            ctx.setdefault("available_years", get_available_years(db_years))
+        finally:
+            db_years.close()
+        q = request.url.query
+        ctx.setdefault("current_path", request.url.path + (f"?{q}" if q else ""))
     t = jinja_env.get_template(template_name)
     return HTMLResponse(t.render(**ctx))
 
@@ -155,20 +192,32 @@ finally:
     _startup_db.close()
 
 
+@app.get("/set-year")
+async def set_year(year: int, next: str = "/"):
+    """Prepne 'aktivni rok' cele aplikace (ulozi se do cookie) a vrati
+    uzivatele zpet tam, odkud prepinac pouzil."""
+    if not next.startswith("/"):
+        next = "/"
+    resp = RedirectResponse(url=next, status_code=303)
+    resp.set_cookie("selected_year", str(year), max_age=60 * 60 * 24 * 365 * 5)
+    return resp
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     db = SessionLocal()
     try:
         init_default_categories(db)
         now = datetime.now()
-        cy = now.year
+        cy = get_selected_year(request)
         txns = db.query(Transaction).filter(Transaction.year == cy).all()
         total_income = sum(t.amount for t in txns if t.is_income and t.tax_relevant)
         total_expense = sum(abs(t.amount) for t in txns if not t.is_income and t.tax_relevant)
         saldo = total_income - total_expense
         expense_pct = (total_expense / total_income * 100) if total_income else None
         unclassified_count = db.query(Transaction).filter(
-            Transaction.category_id == None, Transaction.tax_relevant == True).count()
+            Transaction.category_id == None, Transaction.tax_relevant == True,
+            Transaction.year == cy).count()
         cats = db.query(Category).filter(Category.is_active == True).all()
         cat_expenses = []
         for c in cats:
@@ -182,7 +231,7 @@ async def dashboard(request: Request):
                         "count": r.transaction_count,
                         "imported_at": r.imported_at.strftime("%d.%m.%Y %H:%M") if r.imported_at else ""}
                        for r in recent]
-        return render("dashboard.html",
+        return render("dashboard.html", request=request,
                       total_income=total_income, total_expense=total_expense, saldo=saldo,
                       expense_pct=expense_pct,
                       unclassified_count=unclassified_count, category_expenses=cat_expenses,
@@ -201,7 +250,7 @@ async def import_page(request: Request):
                      "period_label": i.period_label or "",
                      "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
                     for i in imports]
-        return render("import.html", imports=imp_list, message=None, error=None)
+        return render("import.html", request=request, imports=imp_list, message=None, error=None)
     finally:
         db.close()
 
@@ -215,9 +264,9 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
         try:
             transactions_data = parse_cs_csv(raw)
         except Exception as e:
-            return render("import.html", imports=[], message=None, error=f"Chyba parsovani: {e}")
+            return render("import.html", request=request, imports=[], message=None, error=f"Chyba parsovani: {e}")
         if not transactions_data:
-            return render("import.html", imports=[], message=None, error="CSV je prazdne.")
+            return render("import.html", request=request, imports=[], message=None, error="CSV je prazdne.")
         first_date = transactions_data[0].get("datum", "")
         try:
             d = datetime.strptime(first_date, "%Y-%m-%d")
@@ -280,12 +329,12 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
                      "period_label": i.period_label or "",
                      "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
                     for i in imports]
-        return render("import.html", imports=imp_list,
+        return render("import.html", request=request, imports=imp_list,
                       message=f"Importovano {len(transactions_data)} transakci z {file.filename}.",
                       error=None)
     except Exception as e:
         db.rollback()
-        return render("import.html", imports=[], message=None, error=f"Chyba: {e}")
+        return render("import.html", request=request, imports=[], message=None, error=f"Chyba: {e}")
     finally:
         db.close()
 
@@ -319,7 +368,7 @@ async def new_transaction_page(request: Request, added: Optional[str] = None):
             "category": cat_name(db, t.category_id), "tax_relevant": t.tax_relevant,
         } for t in recent]
         today = datetime.now().strftime("%Y-%m-%d")
-        return render("transaction_new.html", categories=cats, recent=recent_list, today=today,
+        return render("transaction_new.html", request=request, categories=cats, recent=recent_list, today=today,
                       msg="Transakce byla přidána." if added else None)
     finally:
         db.close()
@@ -421,14 +470,14 @@ def _parse_manual_tx_form(source_type, direction, date, amount, category, db):
 
 
 @app.get("/transactions/{t_id}/edit", response_class=HTMLResponse)
-async def edit_transaction_page(t_id: int):
+async def edit_transaction_page(request: Request, t_id: int):
     db = SessionLocal()
     try:
         t = db.query(Transaction).filter(Transaction.id == t_id).first()
         if not t or t.source_type == "bank":
             return RedirectResponse(url="/transactions", status_code=303)
         cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
-        return render("transaction_edit.html", mode="edit",
+        return render("transaction_edit.html", request=request, mode="edit",
                       t=_manual_tx_form_context(db, t), categories=cats,
                       form_action=f"/transactions/{t.id}/edit", submit_label="Uložit změny",
                       page_title="Upravit transakci")
@@ -473,14 +522,14 @@ async def update_transaction(
 
 
 @app.get("/transactions/{t_id}/duplicate", response_class=HTMLResponse)
-async def duplicate_transaction_page(t_id: int):
+async def duplicate_transaction_page(request: Request, t_id: int):
     db = SessionLocal()
     try:
         t = db.query(Transaction).filter(Transaction.id == t_id).first()
         if not t or t.source_type == "bank":
             return RedirectResponse(url="/transactions", status_code=303)
         cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
-        return render("transaction_edit.html", mode="duplicate",
+        return render("transaction_edit.html", request=request, mode="duplicate",
                       t=_manual_tx_form_context(db, t), categories=cats,
                       form_action=f"/transactions/{t.id}/duplicate", submit_label="Vytvořit kopii",
                       page_title="Vytvořit kopii transakce")
@@ -526,11 +575,18 @@ async def duplicate_transaction(
         db.close()
 
 
-def _build_transactions_query(db, t_type=None, search=None, month=None, category=None, has_doc=None):
+def _build_transactions_query(db, t_type=None, search=None, month=None, category=None, has_doc=None, year=None):
     """Sdilena logika filtrovani transakci - pouziva jak strankovany vypis na
     /transactions, tak nestrankovany tiskovy pohled na /transactions/print,
-    aby oba vzdy vraceli presne stejnou sadu radku pro stejne filtry."""
+    aby oba vzdy vraceli presne stejnou sadu radku pro stejne filtry.
+
+    'year' je vzdy aktivni rok cele aplikace (prepinac v horni liste) -
+    FinTrack vsude zobrazuje jen data za jeden zvoleny rok, aby se dalo
+    cistě prepinat mezi jednotlivymi lety, aniz by se data ruznych let
+    michala dohromady."""
     q = db.query(Transaction)
+    if year:
+        q = q.filter(Transaction.year == year)
     if t_type == "unclassified":
         q = q.filter(Transaction.category_id == None, Transaction.tax_relevant == True)
     elif t_type == "income":
@@ -583,7 +639,8 @@ async def transactions_page(
 ):
     db = SessionLocal()
     try:
-        q = _build_transactions_query(db, t_type, search, month, category, has_doc)
+        sel_year = get_selected_year(request)
+        q = _build_transactions_query(db, t_type, search, month, category, has_doc, year=sel_year)
         # Nacteme vsechny odpovidajici transakce najednou - u osobniho pouziti
         # jde o male mnozstvi radku a potrebujeme z nich spocitat soucet za
         # CELY filtr (ne jen za aktualni stranku), proto strankujeme az v Pythonu.
@@ -595,9 +652,9 @@ async def transactions_page(
         page = max(1, min(page, total_pages))
         txns = all_matching[(page - 1) * per_page: page * per_page]
         cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
-        all_months_q = db.query(Transaction.year, Transaction.month).distinct().order_by(
-            Transaction.year.desc(), Transaction.month.desc()).all()
-        months_list = [f"{r[0]}-{r[1]:02d}" for r in all_months_q]
+        all_months_q = db.query(Transaction.month).filter(Transaction.year == sel_year).distinct().order_by(
+            Transaction.month.desc()).all()
+        months_list = [f"{sel_year}-{r[0]:02d}" for r in all_months_q]
         t_list = []
         for t in txns:
             t_list.append({
@@ -633,7 +690,7 @@ async def transactions_page(
                 "constant_symbol": t.constant_symbol or "",
                 "specific_symbol": t.specific_symbol or "",
             })
-        return render("transactions.html",
+        return render("transactions.html", request=request,
                       transactions=t_list, categories=cats,
                       current_filter=t_type, search=search or "",
                       months=months_list, selected_month=month or "",
@@ -655,7 +712,8 @@ async def transactions_print(
 ):
     db = SessionLocal()
     try:
-        q = _build_transactions_query(db, t_type, search, month, category, has_doc)
+        sel_year = get_selected_year(request)
+        q = _build_transactions_query(db, t_type, search, month, category, has_doc, year=sel_year)
         all_matching = q.all()
         total_sum = sum(t.amount for t in all_matching)
         t_list = []
@@ -670,7 +728,7 @@ async def transactions_print(
                 "currency": t.currency or "CZK",
             })
 
-        filter_parts = [TRANSACTION_TAB_LABELS.get(t_type, "Vše")]
+        filter_parts = [f"rok {sel_year}", TRANSACTION_TAB_LABELS.get(t_type, "Vše")]
         if category:
             filter_parts.append(f"kategorie: {category}")
         if month:
@@ -740,7 +798,7 @@ async def categories_page(request: Request):
         cats = db.query(Category).filter(Category.is_active == True).order_by(Category.category_type.desc(), Category.name).all()
         cat_list = [{"id": c.id, "name": c.name, "cat_type": c.category_type or "expense",
                      "default_tax_relevant": c.default_tax_relevant} for c in cats]
-        return render("categories.html", categories=cat_list, msg=None)
+        return render("categories.html", request=request, categories=cat_list, msg=None)
     finally:
         db.close()
 
@@ -778,30 +836,32 @@ async def delete_category(cat_id: int):
 async def budgets_page(request: Request):
     db = SessionLocal()
     try:
+        sel_year = get_selected_year(request)
         cats = db.query(Category).filter(Category.is_active == True).order_by(Category.name).all()
-        budgets = db.query(Budget).all()
+        budgets = db.query(Budget).filter(Budget.year == sel_year).all()
         bud_list = []
         for b in budgets:
             c = db.query(Category).filter(Category.id == b.category_id).first()
             bud_list.append({"id": b.id, "category": c.name if c else "?", "monthly_limit": b.amount})
         cat_list = [{"id": c.id, "name": c.name} for c in cats]
-        return render("budgets.html", categories=cat_list, budgets=bud_list, msg=None)
+        return render("budgets.html", request=request, categories=cat_list, budgets=bud_list,
+                      selected_year=sel_year, msg=None)
     finally:
         db.close()
 
 
 @app.post("/budgets/set")
-async def set_budget(category: str = Form(...), amount: float = Form(...)):
+async def set_budget(request: Request, category: str = Form(...), amount: float = Form(...)):
     db = SessionLocal()
     try:
         c = db.query(Category).filter(Category.name == category).first()
         if c:
-            now_year = datetime.now().year
-            existing = db.query(Budget).filter(Budget.category_id == c.id, Budget.year == now_year).first()
+            sel_year = get_selected_year(request)
+            existing = db.query(Budget).filter(Budget.category_id == c.id, Budget.year == sel_year).first()
             if existing:
                 existing.amount = amount
             else:
-                db.add(Budget(category_id=c.id, year=now_year, amount=amount))
+                db.add(Budget(category_id=c.id, year=sel_year, amount=amount))
             db.commit()
         return RedirectResponse(url="/budgets", status_code=303)
     finally:
@@ -832,7 +892,7 @@ async def reports_page(
     try:
         now = datetime.now()
         if not year:
-            year = now.year
+            year = get_selected_year(request)
         if not month:
             month = now.month
         q = db.query(Transaction).filter(Transaction.year == year, Transaction.tax_relevant == True)
@@ -874,11 +934,16 @@ async def reports_page(
             monthly_incomes.append(round(sum(t.amount for t in mt if t.is_income), 2))
             monthly_expenses_chart.append(round(sum(abs(t.amount) for t in mt if not t.is_income), 2))
         available_years = list(range(2020, now.year + 2))
-        return render("reports.html",
+        response = render("reports.html", request=request,
                       total_income=total_income, total_expenses=total_expenses, saldo=saldo,
                       by_category=by_category, monthly_data=True,
                       monthly_labels=monthly_labels, monthly_incomes=monthly_incomes,
                       monthly_expenses=monthly_expenses_chart,
                       years=available_years, selected_year=year, period=period, selected_month=month)
+        # Sestavy maji vlastni vyber roku primo na strance - kdyz se tu rok
+        # zmeni, promitneme to i do globalniho prepinace v horni liste, aby
+        # oba zustaly vzdy sesynchronizovane.
+        response.set_cookie("selected_year", str(year), max_age=60 * 60 * 24 * 365 * 5)
+        return response
     finally:
         db.close()
