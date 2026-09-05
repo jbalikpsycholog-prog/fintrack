@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from database import engine, SessionLocal, Base, Category, Transaction, ClassificationRule, Budget, ImportBatch
+from database import engine, SessionLocal, Base, Category, Transaction, ClassificationRule, Budget, ImportBatch, OpeningBalance
 from parser_cs import parse_cs_csv
 
 Base.metadata.create_all(bind=engine)
@@ -877,6 +877,105 @@ async def delete_budget(bud_id: int):
             db.delete(b)
             db.commit()
         return RedirectResponse(url="/budgets", status_code=303)
+    finally:
+        db.close()
+
+
+MONTH_NAMES_CZ = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen",
+                   "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"]
+
+
+def _get_opening_balance(db, year, account_type):
+    row = db.query(OpeningBalance).filter(
+        OpeningBalance.year == year, OpeningBalance.account_type == account_type).first()
+    return row.amount if row else None
+
+
+def _year_end_balance(db, year, account_type):
+    """Zustatek na konci daneho roku - pouziva se jako navrhovany (needitovany
+    dokud ho uzivatel neulozi) pocatecni stav nasledujiciho roku, pokud pro nej
+    jeste neni nic zadane."""
+    opening = _get_opening_balance(db, year, account_type)
+    if opening is None:
+        return None
+    total = db.query(Transaction).filter(
+        Transaction.year == year, Transaction.source_type == account_type).all()
+    return opening + sum(t.amount for t in total)
+
+
+@app.get("/money", response_class=HTMLResponse)
+async def money_page(request: Request):
+    db = SessionLocal()
+    try:
+        sel_year = get_selected_year(request)
+
+        bank_opening = _get_opening_balance(db, sel_year, "bank")
+        cash_opening = _get_opening_balance(db, sel_year, "cash")
+        bank_opening_is_set = bank_opening is not None
+        cash_opening_is_set = cash_opening is not None
+        if bank_opening is None:
+            prev = _year_end_balance(db, sel_year - 1, "bank")
+            bank_opening = prev if prev is not None else 0.0
+        if cash_opening is None:
+            prev = _year_end_balance(db, sel_year - 1, "cash")
+            cash_opening = prev if prev is not None else 0.0
+
+        rows = []
+        bank_running = bank_opening
+        cash_running = cash_opening
+        year_bank_in = year_bank_out = year_cash_in = year_cash_out = 0.0
+        for m in range(1, 13):
+            bank_txns = db.query(Transaction).filter(
+                Transaction.year == sel_year, Transaction.month == m,
+                Transaction.source_type == "bank").all()
+            cash_txns = db.query(Transaction).filter(
+                Transaction.year == sel_year, Transaction.month == m,
+                Transaction.source_type == "cash").all()
+            bank_in = sum(t.amount for t in bank_txns if t.amount > 0)
+            bank_out = sum(-t.amount for t in bank_txns if t.amount < 0)
+            cash_in = sum(t.amount for t in cash_txns if t.amount > 0)
+            cash_out = sum(-t.amount for t in cash_txns if t.amount < 0)
+            bank_running += bank_in - bank_out
+            cash_running += cash_in - cash_out
+            year_bank_in += bank_in
+            year_bank_out += bank_out
+            year_cash_in += cash_in
+            year_cash_out += cash_out
+            rows.append({
+                "month": MONTH_NAMES_CZ[m - 1],
+                "bank_in": bank_in, "bank_out": bank_out, "bank_balance": bank_running,
+                "cash_in": cash_in, "cash_out": cash_out, "cash_balance": cash_running,
+                "total_balance": bank_running + cash_running,
+                "has_data": bool(bank_txns or cash_txns),
+            })
+
+        return render("money.html", request=request,
+                      selected_year=sel_year,
+                      bank_opening=bank_opening, cash_opening=cash_opening,
+                      bank_opening_is_set=bank_opening_is_set, cash_opening_is_set=cash_opening_is_set,
+                      rows=rows,
+                      year_bank_in=year_bank_in, year_bank_out=year_bank_out,
+                      year_cash_in=year_cash_in, year_cash_out=year_cash_out,
+                      final_bank_balance=bank_running, final_cash_balance=cash_running,
+                      final_total_balance=bank_running + cash_running)
+    finally:
+        db.close()
+
+
+@app.post("/money/set-opening")
+async def set_opening_balance(request: Request, bank_amount: float = Form(...), cash_amount: float = Form(...)):
+    db = SessionLocal()
+    try:
+        sel_year = get_selected_year(request)
+        for acc_type, amount in (("bank", bank_amount), ("cash", cash_amount)):
+            row = db.query(OpeningBalance).filter(
+                OpeningBalance.year == sel_year, OpeningBalance.account_type == acc_type).first()
+            if row:
+                row.amount = amount
+            else:
+                db.add(OpeningBalance(year=sel_year, account_type=acc_type, amount=amount))
+        db.commit()
+        return RedirectResponse(url="/money", status_code=303)
     finally:
         db.close()
 

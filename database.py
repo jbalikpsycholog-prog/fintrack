@@ -145,6 +145,19 @@ class Budget(Base):
     category = relationship("Category", back_populates="budgets")
 
 
+class OpeningBalance(Base):
+    """Pocatecni stav beznaho uctu / pokladny k 1.1. daneho roku - zaklad pro
+    prehled Penize (vyvoj zustatku po mesicich na strance /money)."""
+    __tablename__ = "opening_balances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(Integer, nullable=False)
+    # "bank" (bezny ucet) nebo "cash" (pokladna) - stejne hodnoty jako
+    # Transaction.source_type, aby se dalo primo parovat.
+    account_type = Column(String, nullable=False)
+    amount = Column(Float, default=0.0)
+
+
 # Sloupce, ktere pribyly po prvnim vydani aplikace. Pri kazdem startu se
 # zkontroluje, jestli v databazi chybi, a pokud ano, doplni se (ALTER TABLE),
 # aniz by se smazala existujici data.
