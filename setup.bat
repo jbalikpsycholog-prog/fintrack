@@ -63,15 +63,17 @@ REM Automaticka zaloha databaze (nejvyse jednou denne)
 
 echo.
 echo ============================================
-echo  Aplikace bezi na: http://localhost:8000
-echo  Ukonceni: stisknete Ctrl+C
+echo  FinTrack se spousti na pozadi...
+echo  Za chvili se sam otevre v prohlizeci.
+echo  Ikonka aplikace se objevi dole u hodin (system tray) -
+echo  pres ni jde FinTrack pozdeji znovu otevrit nebo ukoncit.
 echo ============================================
 echo.
+echo Tohle okno uz muzes zavrit - FinTrack pobezi dal na pozadi.
+echo Priste uz FinTrack spoustej pohodlneji pres "Spustit_FinTrack.vbs".
+echo.
 
-REM Otevri prohlizec
-start http://localhost:8000
-
-REM Spust server
-%PYTHON% -m uvicorn main:app --host 127.0.0.1 --port 8000
+REM Spust FinTrack na pozadi (bez cerneho okna) pres pythonw
+start "" ".venv\Scripts\pythonw.exe" "fintrack_tray.pyw"
 
 pause
