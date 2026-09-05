@@ -2,69 +2,63 @@
 {% block title %}Rozpočty – FinTrack{% endblock %}
 {% block content %}
 <div class="mb-5 flex items-center justify-between flex-wrap gap-3">
-    <h1 class="text-2xl font-bold text-slate-800">Rozpočty</h1>h1>
-</div>div>
+  <h1 class="text-2xl font-bold text-slate-800">Rozpočty pro rok {{ selected_year }}</h1>
+</div>
 
 {% if msg %}
-<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">
-    <i class="fas fa-check-circle mr-2"></i>i>{{ msg }}
-</div>div>
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">{{ msg }}</div>
 {% endif %}
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-          <h2 class="font-semibold text-slate-700 mb-4">Nastavit měsíční rozpočet</h2>h2>
-          <form method="post" action="/budgets/set" class="space-y-3">
-                  <div>
-                            <label class="block text-sm text-slate-600 mb-1">Kategorie</label>label>
-                            <select name="category" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
-                                        {% for c in categories %}
-                                        <option value="{{ c.name }}">{{ c.name }}</option>option>
-                                        {% endfor %}
-                            </select>select>
-                  </div>
-                  <div>
-                            <label class="block text-sm text-slate-600 mb-1">Měsíční limit (Kč)</label>label>
-                            <input type="number" name="amount" step="0.01" min="0" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="napr. 5000">
-                  </div>
-                  <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Uložit rozpočet</button>button>
-          </form>form>
-    </div>
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+    <h2 class="font-semibold text-slate-700 mb-4">Nastavit měsíční rozpočet pro rok {{ selected_year }}</h2>
+    <form method="post" action="/budgets/set" class="space-y-3">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Kategorie</label>
+        <select name="category" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+          {% for c in categories %}
+          <option value="{{ c.name }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Měsíční limit (Kč)</label>
+        <input type="number" name="amount" step="0.01" min="0" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="napr. 5000">
+      </div>
+      <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Uložit rozpočet</button>
+    </form>
+  </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-          <div class="px-5 py-4 border-b border-slate-100">
-                  <h2 class="font-semibold text-slate-700">Aktuální rozpočty</h2>h2>
-          </div>
-          <table class="w-full text-sm">
-                  <thead class="bg-slate-50 border-b border-slate-100">
-                            <tr>
-                                        <th class="text-left px-4 py-3 text-slate-600 font-medium">Kategorie</th>th>
-                                        <th class="text-right px-4 py-3 text-slate-600 font-medium">Limit/měsíc</th>th>
-                                        <th class="px-4 py-3"></th>th>
-                            </tr>
-                  </thead>thead>
-                  <tbody>
-                            {% for b in budgets %}
-                            <tr class="border-b border-slate-50 hover:bg-slate-50">
-                                        <td class="px-4 py-3 font-medium text-slate-800">{{ b.category }}</td>td>
-                                        <td class="px-4 py-3 text-right text-slate-700">{{ "%.2f"|format(b.monthly_limit) }} Kč</td>td>
-                                        <td class="px-4 py-3 text-right">
-                                                      <form method="post" action="/budgets/delete/{{ b.id }}">
-                                                                      <button type="submit" class="text-xs text-red-500 hover:text-red-700">Smazat</button>button>
-                                                      </form>form>
-                                        </td>td>
-                            </tr>tr>
-                            {% else %}
-                            <tr>
-                                        <td colspan="3" class="px-4 py-8 text-center text-slate-400">Žádné rozpočty nejsou nastaveny.</td>td>
-                            </tr>tr>
-                            {% endfor %}
-                  </tbody>
-          </table>table>
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-100">
+      <h2 class="font-semibold text-slate-700">Rozpočty pro rok {{ selected_year }}</h2>
     </div>
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-100">
+        <tr>
+          <th class="text-left px-4 py-3 text-slate-600 font-medium">Kategorie</th>
+          <th class="text-right px-4 py-3 text-slate-600 font-medium">Limit/měsíc</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in budgets %}
+        <tr class="border-b border-slate-50 hover:bg-slate-50">
+          <td class="px-4 py-3 font-medium text-slate-800">{{ b.category }}</td>
+          <td class="px-4 py-3 text-right text-slate-700">{{ "%.2f"|format(b.monthly_limit) }} Kč</td>
+          <td class="px-4 py-3 text-right">
+            <form method="post" action="/budgets/delete/{{ b.id }}">
+              <button type="submit" class="text-xs text-red-500 hover:text-red-700">Smazat</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="px-4 py-8 text-center text-slate-400">Pro rok {{ selected_year }} zatím nejsou nastavené žádné rozpočty.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}
-                  </tbody>
-                            </tr>
-                  </div>
-                  </div>

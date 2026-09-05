@@ -22,6 +22,17 @@
         <a href="/budgets" class="px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition">Rozpočty</a>
         <a href="/categories" class="px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition">Kategorie</a>
       </div>
+      {% if available_years %}
+      <form method="get" action="/set-year" class="flex items-center">
+        <input type="hidden" name="next" value="{{ current_path or '/' }}">
+        <select name="year" onchange="this.form.submit()" title="Aktivní rok"
+                class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-medium bg-white text-gray-700 hover:border-gray-400 cursor-pointer">
+          {% for y in available_years %}
+          <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
     </div>
   </nav>
 
