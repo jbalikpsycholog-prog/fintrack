@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Peníze – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5 flex items-center justify-between flex-wrap gap-3">
+  <h1 class="text-2xl font-bold text-slate-800">Peníze – rok {{ selected_year }}</h1>
+</div>
+
+<!-- Počáteční stav k 1.1. -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
+  <h2 class="font-semibold text-slate-700 mb-1">Počáteční stav k 1. 1. {{ selected_year }}</h2>
+  {% if not bank_opening_is_set or not cash_opening_is_set %}
+  <p class="text-xs text-amber-600 mb-3">Zatím nastaveno automaticky podle konce roku {{ selected_year - 1 }} (nebo nulou, pokud rok {{ selected_year - 1 }} ještě nemá počáteční stav). Zkontroluj a ulož.</p>
+  {% else %}
+  <p class="text-xs text-slate-400 mb-3">Nastaveno ručně.</p>
+  {% endif %}
+  <form method="post" action="/money/set-opening" class="flex items-end gap-4 flex-wrap">
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Běžný účet (Kč)</label>
+      <input type="number" name="bank_amount" step="0.01" value="{{ "%.2f"|format(bank_opening) }}" class="border rounded-lg px-3 py-2 text-sm w-40">
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Pokladna (Kč)</label>
+      <input type="number" name="cash_amount" step="0.01" value="{{ "%.2f"|format(cash_opening) }}" class="border rounded-lg px-3 py-2 text-sm w-40">
+    </div>
+    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Uložit počáteční stav</button>
+  </form>
+</div>
+
+<!-- Aktuální zůstatky -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+    <div class="text-sm text-slate-500 mb-1">Zůstatek – běžný účet</div>
+    <div class="text-2xl font-bold {% if final_bank_balance >= 0 %}text-blue-600{% else %}text-red-600{% endif %}">{{ final_bank_balance|czk }} Kč</div>
+    <div class="text-xs text-slate-400 mt-1">ke konci prosince {{ selected_year }}</div>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+    <div class="text-sm text-slate-500 mb-1">Zůstatek – pokladna</div>
+    <div class="text-2xl font-bold {% if final_cash_balance >= 0 %}text-blue-600{% else %}text-red-600{% endif %}">{{ final_cash_balance|czk }} Kč</div>
+    <div class="text-xs text-slate-400 mt-1">ke konci prosince {{ selected_year }}</div>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+    <div class="text-sm text-slate-500 mb-1">Zůstatek – celkem</div>
+    <div class="text-2xl font-bold {% if final_total_balance >= 0 %}text-green-600{% else %}text-red-600{% endif %}">{{ final_total_balance|czk }} Kč</div>
+    <div class="text-xs text-slate-400 mt-1">běžný účet + pokladna</div>
+  </div>
+</div>
+
+<!-- Přehled po měsících -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-100">
+      <tr>
+        <th rowspan="2" class="text-left px-4 py-2 text-slate-600 font-medium align-bottom">Měsíc</th>
+        <th colspan="3" class="text-center px-4 py-2 text-slate-600 font-medium border-l border-slate-200">Běžný účet</th>
+        <th colspan="3" class="text-center px-4 py-2 text-slate-600 font-medium border-l border-slate-200">Pokladna</th>
+        <th rowspan="2" class="text-right px-4 py-2 text-slate-600 font-medium align-bottom border-l border-slate-200">Zůstatek celkem</th>
+      </tr>
+      <tr class="text-xs text-slate-500">
+        <th class="text-right px-3 py-1.5 font-medium border-l border-slate-200">Příjem</th>
+        <th class="text-right px-3 py-1.5 font-medium">Výdaj</th>
+        <th class="text-right px-3 py-1.5 font-medium">Zůstatek</th>
+        <th class="text-right px-3 py-1.5 font-medium border-l border-slate-200">Příjem</th>
+        <th class="text-right px-3 py-1.5 font-medium">Výdaj</th>
+        <th class="text-right px-3 py-1.5 font-medium">Zůstatek</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="border-b border-slate-100 bg-slate-50/60">
+        <td class="px-4 py-2 text-slate-500 italic">Počáteční stav</td>
+        <td class="px-3 py-2 border-l border-slate-200"></td>
+        <td class="px-3 py-2"></td>
+        <td class="px-3 py-2 text-right text-slate-600">{{ bank_opening|czk }} Kč</td>
+        <td class="px-3 py-2 border-l border-slate-200"></td>
+        <td class="px-3 py-2"></td>
+        <td class="px-3 py-2 text-right text-slate-600">{{ cash_opening|czk }} Kč</td>
+        <td class="px-4 py-2 text-right border-l border-slate-200 text-slate-600">{{ (bank_opening + cash_opening)|czk }} Kč</td>
+      </tr>
+      {% for r in rows %}
+      <tr class="border-b border-slate-50 hover:bg-slate-50 {% if not r.has_data %}text-slate-300{% endif %}">
+        <td class="px-4 py-2 font-medium {% if r.has_data %}text-slate-800{% endif %}">{{ r.month }}</td>
+        <td class="px-3 py-2 text-right border-l border-slate-200 {% if r.bank_in %}text-green-600{% endif %}">{% if r.bank_in %}{{ r.bank_in|czk }}{% else %}–{% endif %}</td>
+        <td class="px-3 py-2 text-right {% if r.bank_out %}text-red-600{% endif %}">{% if r.bank_out %}{{ r.bank_out|czk }}{% else %}–{% endif %}</td>
+        <td class="px-3 py-2 text-right {% if r.has_data %}text-slate-700 font-medium{% endif %}">{{ r.bank_balance|czk }}</td>
+        <td class="px-3 py-2 text-right border-l border-slate-200 {% if r.cash_in %}text-green-600{% endif %}">{% if r.cash_in %}{{ r.cash_in|czk }}{% else %}–{% endif %}</td>
+        <td class="px-3 py-2 text-right {% if r.cash_out %}text-red-600{% endif %}">{% if r.cash_out %}{{ r.cash_out|czk }}{% else %}–{% endif %}</td>
+        <td class="px-3 py-2 text-right {% if r.has_data %}text-slate-700 font-medium{% endif %}">{{ r.cash_balance|czk }}</td>
+        <td class="px-4 py-2 text-right border-l border-slate-200 font-semibold {% if r.has_data %}text-slate-800{% endif %}">{{ r.total_balance|czk }} Kč</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="border-t-2 border-slate-300 font-semibold bg-slate-50">
+        <td class="px-4 py-3 text-slate-700">Celkem za rok {{ selected_year }}</td>
+        <td class="px-3 py-3 text-right border-l border-slate-200 text-green-700">{{ year_bank_in|czk }}</td>
+        <td class="px-3 py-3 text-right text-red-700">{{ year_bank_out|czk }}</td>
+        <td class="px-3 py-3 text-right text-slate-800">{{ final_bank_balance|czk }}</td>
+        <td class="px-3 py-3 text-right border-l border-slate-200 text-green-700">{{ year_cash_in|czk }}</td>
+        <td class="px-3 py-3 text-right text-red-700">{{ year_cash_out|czk }}</td>
+        <td class="px-3 py-3 text-right text-slate-800">{{ final_cash_balance|czk }}</td>
+        <td class="px-4 py-3 text-right border-l border-slate-200 text-slate-900">{{ final_total_balance|czk }} Kč</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+<p class="text-xs text-slate-400 mt-3">Zůstatky vycházejí z bankovních (Import) a hotovostních (Hotovost) transakcí – nepeněžní položky (např. paušál za vozidlo) se do toku peněz nepočítají, protože nepředstavují skutečný pohyb na účtu ani v pokladně.</p>
+{% endblock %}
