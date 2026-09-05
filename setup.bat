@@ -58,6 +58,9 @@ if not exist "templates" (
     exit /b 1
 )
 
+REM Automaticka zaloha databaze (nejvyse jednou denne)
+%PYTHON% backup_utils.py auto
+
 echo.
 echo ============================================
 echo  Aplikace bezi na: http://localhost:8000

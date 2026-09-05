@@ -33,6 +33,9 @@ if ! command -v python3 &>/dev/null; then
                                 # Vytvoreni potrebnych slozek
                                 mkdir -p static receipts
 
+                                # Automaticka zaloha databaze (nejvyse jednou denne)
+                                python3 backup_utils.py auto
+
                                 echo
                                 echo "============================================"
                                 echo " Aplikace bezi na: http://localhost:8000"

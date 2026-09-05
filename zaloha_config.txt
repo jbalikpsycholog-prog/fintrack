@@ -1,0 +1,9 @@
+# Cesta ke slozce, kam se maji navic ukladat zalohy FinTracku (napriklad
+# slozka Google Disku na tvem pocitaci). Muzes ji kdykoliv zmenit - staci
+# prepsat radek s cestou nize a soubor ulozit (napr. v Poznamkovem bloku).
+#
+# Pokud tahle slozka prave neni dostupna (napr. Google Disk pro pocitace
+# neni spusteny), FinTrack ji proste jen preskoci - lokalni zaloha ve
+# slozce "zalohy" vedle aplikace vsak vzdy probehne v poradku.
+
+G:\Můj disk
