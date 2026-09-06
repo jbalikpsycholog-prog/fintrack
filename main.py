@@ -324,8 +324,14 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
             db.add(t)
         db.commit()
         recompute_suggestions(db)
-        doc_count = scan_month_documents(db, Transaction, iy, im)
-        db.commit()
+        doc_count = 0
+        doc_error = None
+        try:
+            doc_count = scan_month_documents(db, Transaction, iy, im)
+            db.commit()
+        except RuntimeError as e:
+            db.rollback()
+            doc_error = str(e)
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
         imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
                      "count": i.transaction_count,
@@ -335,6 +341,8 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
         msg = f"Importovano {len(transactions_data)} transakci z {file.filename}."
         if doc_count:
             msg += f" Navrženo {doc_count} {_doklady_word(doc_count)} (potvrď v Transakcích)."
+        elif doc_error:
+            msg += f" {doc_error}"
         return render("import.html", request=request, imports=imp_list,
                       message=msg,
                       error=None)
@@ -728,10 +736,16 @@ async def find_documents(request: Request):
     try:
         sel_year = get_selected_year(request)
         total = 0
-        for m in range(1, 13):
-            total += scan_month_documents(db, Transaction, sel_year, m)
+        error = None
+        try:
+            for m in range(1, 13):
+                total += scan_month_documents(db, Transaction, sel_year, m)
+        except RuntimeError as e:
+            error = str(e)
         db.commit()
-        if total:
+        if error:
+            msg = error
+        elif total:
             msg = f"Navrženo {total} {_doklady_word(total)} (potvrď u příslušných transakcí)."
         else:
             msg = "Nenalezeny žádné nové doklady k přiřazení."

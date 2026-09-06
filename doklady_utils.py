@@ -33,6 +33,12 @@ import re
 import glob
 from pathlib import Path
 
+try:
+    import pdfplumber  # noqa: F401
+    PDFPLUMBER_AVAILABLE = True
+except Exception:
+    PDFPLUMBER_AVAILABLE = False
+
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "doklady_config.txt")
 
 _VS_RE = re.compile(r"variabiln[ií]\s*symbol\s*[:.]?\s*(\d{3,15})", re.IGNORECASE)
@@ -77,6 +83,8 @@ def month_folder(root, year, month):
 
 
 def _extract_text(pdf_path):
+    if not PDFPLUMBER_AVAILABLE:
+        return ""
     try:
         import pdfplumber
         parts = []
@@ -160,6 +168,15 @@ def scan_month_documents(db, Transaction, year, month):
     )
     if not pdfs:
         return 0
+
+    if not PDFPLUMBER_AVAILABLE:
+        # Slozka s doklady existuje a jsou v ni PDF, ale chybi knihovna pro
+        # jejich cteni - bez tohohle upozorneni by parovani jen tise nikdy
+        # nic nenaslo, aniz by uzivatel vedel proc.
+        raise RuntimeError(
+            "Chybí knihovna pro čtení PDF (pdfplumber) - spusť prosím jednou "
+            "setup.bat (dvojklikem), ať se doinstaluje, a pak to zkus znovu."
+        )
 
     candidates = db.query(Transaction).filter(
         Transaction.year == year, Transaction.month == month,
