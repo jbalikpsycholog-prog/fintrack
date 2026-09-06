@@ -158,7 +158,7 @@
               <input type="url" name="document_url" value="{{ t.document_url or t.suggested_document_url or '' }}" placeholder="https://drive.google.com/..." class="border rounded px-2 py-1 text-xs flex-1">
               <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">Uložit</button>
             </form>
-            <a href="{{ t.document_url or t.suggested_document_url or '' }}" target="_blank" rel="noopener" id="doclink-{{ t.id }}" class="text-indigo-600 hover:underline text-xs {% if not t.document_url %}hidden{% endif %}">Otevřít doklad ↗</a>
+            <a href="{{ t.document_url or t.suggested_document_url or '' }}" target="_blank" rel="noopener" id="doclink-{{ t.id }}" onclick="return openDocLink(event, this);" class="text-indigo-600 hover:underline text-xs {% if not t.document_url %}hidden{% endif %}">Otevřít doklad ↗</a>
             {% if not t.document_url and t.suggested_document_url %}
             <div class="text-[11px] text-amber-600 basis-full" id="dochint-{{ t.id }}">navrženo podle dokladu „{{ t.suggested_document_name }}" – klikni na Uložit pro potvrzení, nebo uprav</div>
             {% endif %}
@@ -262,6 +262,21 @@ function submitCategorize(evt, form, tId) {
       form.submit();
     });
   return false;
+}
+
+function openDocLink(evt, link) {
+  // Odkazy na lokalni soubor ("file://...") prohlizec z bezpecnostnich duvodu
+  // casto neumozni otevrit primym klikem na strance z http://localhost -
+  // misto normalni navigace tedy poslem pozadavek FinTracku, at soubor otevre
+  // primo na pocitaci (viz /open-local-file v main.py). Bezne https odkazy
+  // (napr. na Google Disk) se otevirat normalne v nove zalozce beze zmeny.
+  var href = link.getAttribute('href') || '';
+  if (href.indexOf('file://') === 0) {
+    evt.preventDefault();
+    fetch('/open-local-file?url=' + encodeURIComponent(href)).catch(function () {});
+    return false;
+  }
+  return true;
 }
 
 function submitDocument(evt, form, tId) {
