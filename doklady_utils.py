@@ -150,6 +150,22 @@ def _to_file_uri(path):
         return path
 
 
+def file_uri_to_path(uri):
+    """Prevede "file://" odkaz (vygenerovany vyse pres Path.as_uri()) zpet na
+    normalni cestu k souboru na disku - pouziva main.py u routy
+    /open-local-file, ktera doklad otevre primo na pocitaci (viz tam proc:
+    prohlizec z bezpecnostnich duvodu casto neumozni otevrit file:// odkaz
+    primo klikem na strance nacitane z http://localhost)."""
+    from urllib.parse import urlparse, unquote
+    parsed = urlparse(uri)
+    path = unquote(parsed.path)
+    # "file:///G:/..." se parsuje jako path "/G:/..." - uvodni lomitko pred
+    # pismenem disku je potreba odstranit, aby vysledek byl platna cesta.
+    if re.match(r"^/[A-Za-z]:", path):
+        path = path[1:]
+    return path
+
+
 def scan_month_documents(db, Transaction, year, month):
     """Projde mesicni slozku dokladu pro dany rok/mesic a navrhne
     suggested_document_url/suggested_document_name u jednoznacne sparovanych

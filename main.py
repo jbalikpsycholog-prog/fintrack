@@ -11,7 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from database import engine, SessionLocal, Base, Category, Transaction, ClassificationRule, Budget, ImportBatch, OpeningBalance
 from parser_cs import parse_cs_csv
-from doklady_utils import scan_month_documents
+from doklady_utils import scan_month_documents, file_uri_to_path
 
 Base.metadata.create_all(bind=engine)
 
@@ -843,6 +843,26 @@ async def set_transaction_document(t_id: int, document_url: str = Form("")):
         return RedirectResponse(url="/transactions", status_code=303)
     finally:
         db.close()
+
+
+@app.get("/open-local-file")
+async def open_local_file(url: str):
+    """Otevre lokalni doklad (PDF na disku) primo vychozim programem na tomto
+    pocitaci (os.startfile) - obchazi to, ze prohlizec z bezpecnostnich
+    duvodu casto neumozni otevrit "file://" odkaz primym klikem na strance
+    nacitane z http://localhost (proto se pro tyto odkazy misto beznou
+    navigaci pouziva tato route - viz JS funkce openDocLink v
+    transactions.html)."""
+    if not url.startswith("file://"):
+        raise HTTPException(status_code=400, detail="Neplatný odkaz")
+    path = file_uri_to_path(url)
+    if not os.path.exists(path):
+        return HTMLResponse(f"<p>Soubor nebyl nalezen na disku:<br>{path}</p>", status_code=404)
+    try:
+        os.startfile(path)  # type: ignore[attr-defined]  # jen Windows - FinTrack bezi jen tam
+    except Exception as e:
+        return HTMLResponse(f"<p>Nepodařilo se otevřít soubor: {e}</p>", status_code=500)
+    return HTMLResponse("Otevírám doklad…")
 
 
 @app.get("/categories", response_class=HTMLResponse)
