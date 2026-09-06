@@ -41,7 +41,18 @@ except Exception:
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "doklady_config.txt")
 
-_VS_RE = re.compile(r"variabiln[ií]\s*symbol\s*[:.]?\s*(\d{3,15})", re.IGNORECASE)
+# Mezi "variabilni symbol" a samotnym cislem casto byva jeste vysvetlujici
+# text v zavorce (napr. "Variabilni symbol (uvadejte pri platbe): 123456"),
+# proto se pripousti jedna kratka zavorka navic pred dvojteckou/cislem. Zamerne
+# se ale NEPOVOLUJE libovolny text mezi "symbol" a cislem - nektere faktury
+# maji jeste vetu typu "nezapomente uvest variabilni symbol." bez cisla hned
+# za tim, a kdyby regex preskakoval pres libovolny text, chytil by omylem
+# nejake uplne jine cislo dal v dokumentu (napr. z adresy). Kdyz na tomto
+# miste neuspeje, re.search zkusi dalsi vyskyt "variabilni symbol" v textu.
+_VS_RE = re.compile(
+    r"variabiln[ií]\s*symbol\s*(?:\([^)]{0,60}\)\s*)?[:.]?\s*(\d{3,15})",
+    re.IGNORECASE,
+)
 
 # Klicova slova, u kterych hledame castku k uhrade - v poradi dulezitosti
 # (prvni nalezene v textu dokladu se pouzije).
