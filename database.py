@@ -116,6 +116,12 @@ class Transaction(Base):
     suggested_category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     suggested_tax_relevant = Column(Boolean, nullable=True)
 
+    # Navrh odkazu na doklad (PDF) nalezeny automatickym parovanim se slozkou
+    # dokladu na Google Disku (viz doklady_utils.py) - jen doporuceni, do
+    # skutecneho document_url se prepise az potvrzenim (tlacitko Ulozit v UI).
+    suggested_document_url = Column(Text, nullable=True)
+    suggested_document_name = Column(String, nullable=True)
+
     receipt_path = Column(String, nullable=True)
 
     import_batch = relationship("ImportBatch", back_populates="transactions")
@@ -184,6 +190,8 @@ NEW_COLUMNS = [
     ("categories", "default_tax_relevant", "BOOLEAN DEFAULT 1"),
     ("transactions", "suggested_category_id", "INTEGER"),
     ("transactions", "suggested_tax_relevant", "BOOLEAN"),
+    ("transactions", "suggested_document_url", "TEXT"),
+    ("transactions", "suggested_document_name", "TEXT"),
 ]
 
 

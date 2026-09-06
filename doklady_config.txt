@@ -1,0 +1,19 @@
+# Korenova slozka, kde mas na Google Disku ulozene doklady (napr.
+# "G:\Muj disk"). FinTrack si podle zvoleneho roku a mesice sam dopocita
+# cestu do prislusne mesicni podslozky - podle vzoru, ktery uz pouzivas:
+#
+#   <tato cesta>\<rok>_VYDAJE\<rok><mesic 2 cislice>_Doklady
+#
+# napr. pro leden 2026: G:\Muj disk\2026_VYDAJE\202601_Doklady
+#
+# Staci do teto slozky nahravat PDF doklady (bez preji­menovavani) - pri
+# kazdem importu vypisu za dany mesic (a tlacitkem "Najit doklady" na
+# strance Transakce kdykoliv pozdeji) FinTrack zkusi doklady spárovat s
+# transakcemi podle variabilniho symbolu nebo castky. Muzes cestu kdykoliv
+# zmenit - staci prepsat radek nize a soubor ulozit (napr. v Poznamkovem
+# bloku).
+#
+# Pokud tahle slozka prave neni dostupna (napr. Google Disk pro pocitace
+# neni spusteny), FinTrack parovani proste jen preskoci - nic se nerozbije.
+
+G:\Můj disk

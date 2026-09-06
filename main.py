@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from database import engine, SessionLocal, Base, Category, Transaction, ClassificationRule, Budget, ImportBatch, OpeningBalance
 from parser_cs import parse_cs_csv
+from doklady_utils import scan_month_documents
 
 Base.metadata.create_all(bind=engine)
 
@@ -323,14 +324,19 @@ async def import_csv(request: Request, file: UploadFile = File(...), period_labe
             db.add(t)
         db.commit()
         recompute_suggestions(db)
+        doc_count = scan_month_documents(db, Transaction, iy, im)
+        db.commit()
         imports = db.query(ImportBatch).order_by(ImportBatch.imported_at.desc()).all()
         imp_list = [{"id": i.id, "filename": i.filename, "month": i.month, "year": i.year,
                      "count": i.transaction_count,
                      "period_label": i.period_label or "",
                      "imported_at": i.imported_at.strftime("%d.%m.%Y %H:%M") if i.imported_at else ""}
                     for i in imports]
+        msg = f"Importovano {len(transactions_data)} transakci z {file.filename}."
+        if doc_count:
+            msg += f" Navrženo {doc_count} {_doklady_word(doc_count)} (potvrď v Transakcích)."
         return render("import.html", request=request, imports=imp_list,
-                      message=f"Importovano {len(transactions_data)} transakci z {file.filename}.",
+                      message=msg,
                       error=None)
     except Exception as e:
         db.rollback()
@@ -618,6 +624,16 @@ def _build_transactions_query(db, t_type=None, search=None, month=None, category
     return q.order_by(Transaction.date.desc())
 
 
+def _doklady_word(n: int) -> str:
+    """Spravny tvar slova 'doklad' pro dany pocet (1 doklad, 2-4 doklady,
+    5+ dokladu)."""
+    if n == 1:
+        return "doklad"
+    if 2 <= n <= 4:
+        return "doklady"
+    return "dokladů"
+
+
 TRANSACTION_TAB_LABELS = {
     "unclassified": "Nezařazené",
     "income": "Příjmy",
@@ -672,6 +688,8 @@ async def transactions_page(
                 "tax_relevant": t.tax_relevant,
                 "source_type": t.source_type or "bank",
                 "document_url": t.document_url or "",
+                "suggested_document_url": t.suggested_document_url if not t.document_url else None,
+                "suggested_document_name": t.suggested_document_name if not t.document_url else None,
                 "category": cat_name(db, t.category_id),
                 "suggested_category": cat_name(db, t.suggested_category_id) if not t.category_id else None,
                 "suggested_tax_relevant": t.suggested_tax_relevant if not t.category_id else None,
@@ -697,6 +715,28 @@ async def transactions_page(
                       selected_category=category or "", selected_has_doc=has_doc or "",
                       total_sum=total_sum,
                       page=page, total_pages=total_pages, total_count=total_count, msg=msg)
+    finally:
+        db.close()
+
+
+@app.post("/transactions/find-documents")
+async def find_documents(request: Request):
+    """Rucni spusteni parovani dokladu (viz doklady_utils.py) pro cely
+    aktualne zvoleny rok - pro pripad, ze uzivatel nahraje doklady az po
+    importu vypisu, nebo zmeni cestu ke slozce s doklady."""
+    db = SessionLocal()
+    try:
+        sel_year = get_selected_year(request)
+        total = 0
+        for m in range(1, 13):
+            total += scan_month_documents(db, Transaction, sel_year, m)
+        db.commit()
+        if total:
+            msg = f"Navrženo {total} {_doklady_word(total)} (potvrď u příslušných transakcí)."
+        else:
+            msg = "Nenalezeny žádné nové doklady k přiřazení."
+        from urllib.parse import quote
+        return RedirectResponse(url=f"/transactions?msg={quote(msg)}", status_code=303)
     finally:
         db.close()
 
