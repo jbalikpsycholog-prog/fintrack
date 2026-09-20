@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Nastavení faktur – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-bold text-slate-800">Nastavení faktur</h1>
+  <p class="text-slate-500 text-sm">Údaje dodavatele pro hlavičku faktur a QR platbu.</p>
+  <a href="/faktury" class="text-sm text-indigo-600 hover:text-indigo-800">← Zpět na Faktury</a>
+</div>
+
+{% if msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-5 text-sm">{{ msg }}</div>
+{% endif %}
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5 max-w-lg">
+  <form method="post" action="/faktury/nastaveni" class="space-y-3">
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Jméno / název dodavatele</label>
+      <input type="text" name="supplier_name" required value="{{ s.supplier_name }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Adresa</label>
+      <textarea name="supplier_address" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm">{{ s.supplier_address }}</textarea>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">IČ</label>
+        <input type="text" name="supplier_ic" value="{{ s.supplier_ic }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">DIČ (nepovinné)</label>
+        <input type="text" name="supplier_dic" value="{{ s.supplier_dic or '' }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Poznámka o DPH</label>
+      <input type="text" name="vat_note" value="{{ s.vat_note }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Číslo účtu</label>
+        <input type="text" name="bank_account" value="{{ s.bank_account }}" placeholder="123456789/0800" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">IBAN (pro QR platbu)</label>
+        <input type="text" name="iban" value="{{ s.iban }}" placeholder="CZ68 0800 0000 0041 6482 6309" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Výchozí splatnost (dny)</label>
+      <input type="number" name="due_days_default" min="0" value="{{ s.due_days_default }}" class="w-32 border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Uložit nastavení</button>
+  </form>
+</div>
+{% endblock %}

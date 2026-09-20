@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-bold text-slate-800">{{ page_title }}</h1>
+  <a href="/faktury" class="text-sm text-indigo-600 hover:text-indigo-800">← Zpět na Faktury</a>
+</div>
+
+{% if not customers %}
+<div class="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg mb-5 text-sm">
+  Nejdřív je potřeba <a href="/zakaznici" class="underline font-medium">přidat alespoň jednoho zákazníka</a>.
+</div>
+{% endif %}
+
+<form method="post" action="{{ form_action }}" class="bg-white rounded-xl shadow-sm border border-slate-100 p-5 space-y-5">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Zákazník</label>
+      <select name="customer_id" required class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="">— vyberte —</option>
+        {% for c in customers %}
+        <option value="{{ c.id }}" {% if inv and inv.customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Způsob platby</label>
+      <input type="text" name="payment_method" value="{{ inv.payment_method if inv else 'převodem' }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Datum vystavení</label>
+      <input type="date" name="issue_date" required value="{{ inv.issue_date if inv else today }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Datum splatnosti</label>
+      <input type="date" name="due_date" required value="{{ inv.due_date if inv else default_due }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Datum uskutečnění plnění (nepovinné)</label>
+      <input type="date" name="delivery_date" value="{{ inv.delivery_date if inv else '' }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+  </div>
+
+  <div>
+    <label class="block text-sm text-slate-600 mb-2">Položky</label>
+    <table class="w-full text-sm" id="items-table">
+      <thead>
+        <tr class="text-left text-slate-500 text-xs">
+          <th class="pb-1 pr-2">Popis</th>
+          <th class="pb-1 pr-2 w-20">Množství</th>
+          <th class="pb-1 pr-2 w-20">Jedn.</th>
+          <th class="pb-1 pr-2 w-32">Cena / jedn.</th>
+          <th class="pb-1 w-10"></th>
+        </tr>
+      </thead>
+      <tbody id="items-body">
+        {% if inv and inv.item_rows %}
+          {% for it in inv.item_rows %}
+          <tr class="item-row">
+            <td class="pr-2 py-1"><input type="text" name="item_description[]" value="{{ it.description }}" required class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+            <td class="pr-2 py-1"><input type="number" step="any" name="item_quantity[]" value="{{ it.quantity }}" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+            <td class="pr-2 py-1"><input type="text" name="item_unit[]" value="{{ it.unit }}" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+            <td class="pr-2 py-1"><input type="number" step="any" name="item_unit_price[]" value="{{ it.unit_price }}" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+            <td class="py-1"><button type="button" onclick="removeItemRow(this)" class="text-red-400 hover:text-red-600 px-2">✕</button></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr class="item-row">
+            <td class="pr-2 py-1"><input type="text" name="item_description[]" required class="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="např. Konzultace"></td>
+            <td class="pr-2 py-1"><input type="number" step="any" name="item_quantity[]" value="1" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+            <td class="pr-2 py-1"><input type="text" name="item_unit[]" value="ks" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+            <td class="pr-2 py-1"><input type="number" step="any" name="item_unit_price[]" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+            <td class="py-1"><button type="button" onclick="removeItemRow(this)" class="text-red-400 hover:text-red-600 px-2">✕</button></td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <button type="button" onclick="addItemRow()" class="mt-2 text-sm text-indigo-600 hover:text-indigo-800">+ Přidat položku</button>
+  </div>
+
+  <div>
+    <label class="block text-sm text-slate-600 mb-1">Poznámka (nepovinné)</label>
+    <textarea name="note" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm">{{ inv.note if inv else '' }}</textarea>
+  </div>
+
+  <button type="submit" class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm hover:bg-indigo-700">
+    {% if mode == 'edit' %}Uložit změny{% else %}Vystavit fakturu{% endif %}
+  </button>
+</form>
+
+<template id="item-row-template">
+  <tr class="item-row">
+    <td class="pr-2 py-1"><input type="text" name="item_description[]" class="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="např. Konzultace"></td>
+    <td class="pr-2 py-1"><input type="number" step="any" name="item_quantity[]" value="1" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+    <td class="pr-2 py-1"><input type="text" name="item_unit[]" value="ks" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+    <td class="pr-2 py-1"><input type="number" step="any" name="item_unit_price[]" class="w-full border rounded-lg px-2 py-1.5 text-sm"></td>
+    <td class="py-1"><button type="button" onclick="removeItemRow(this)" class="text-red-400 hover:text-red-600 px-2">✕</button></td>
+  </tr>
+</template>
+
+<script>
+function addItemRow() {
+  var tpl = document.getElementById('item-row-template');
+  var clone = tpl.content.cloneNode(true);
+  document.getElementById('items-body').appendChild(clone);
+}
+function removeItemRow(btn) {
+  var body = document.getElementById('items-body');
+  if (body.querySelectorAll('.item-row').length <= 1) {
+    return; // vzdy musi zustat aspon jeden radek
+  }
+  btn.closest('tr').remove();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faktura {{ inv.invoice_number }} – FinTrack OSVČ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+  <div class="no-print bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 flex-wrap gap-2">
+    <a href="/faktury" class="text-sm text-gray-500 hover:text-gray-800">← Zpět na faktury</a>
+    <div class="flex items-center gap-2 flex-wrap">
+      {% if inv.status == 'vystavena' %}
+      <a href="/faktury/{{ inv.id }}/edit" class="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">Upravit</a>
+      <form method="post" action="/faktury/{{ inv.id }}/paid" class="flex items-center gap-2">
+        <input type="date" name="paid_date" value="{{ today }}" class="border rounded-lg px-2 py-2 text-sm">
+        <button type="submit" class="bg-green-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-700">Označit jako zaplaceno</button>
+      </form>
+      <form method="post" action="/faktury/{{ inv.id }}/delete" onsubmit="return confirm('Smazat fakturu {{ inv.invoice_number }}? Tuto akci nelze vrátit.');">
+        <button type="submit" class="text-sm text-red-500 hover:text-red-700 px-2">Smazat</button>
+      </form>
+      {% elif inv.status == 'zaplacena' %}
+      <span class="text-sm text-green-700">Zaplaceno {{ inv.paid_date }}</span>
+      <form method="post" action="/faktury/{{ inv.id }}/unpaid" onsubmit="return confirm('Zrušit zaplacení faktury {{ inv.invoice_number }}? Navázaná transakce v Penězích/Transakcích bude smazána.');">
+        <button type="submit" class="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">Zrušit zaplacení</button>
+      </form>
+      {% endif %}
+      <button onclick="window.print()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">🖨 Vytisknout / PDF</button>
+    </div>
+  </div>
+
+  <div class="max-w-3xl mx-auto px-6 py-8 print:px-0 print:py-0">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-8 print:border-0 print:shadow-none print:rounded-none">
+
+      <div class="flex items-start justify-between mb-8">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800">Faktura {{ inv.invoice_number }}</h1>
+          {% if inv.status == 'zaplacena' %}
+          <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">Zaplaceno</span>
+          {% elif inv.is_overdue %}
+          <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">Po splatnosti</span>
+          {% else %}
+          <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700">Vystavená</span>
+          {% endif %}
+        </div>
+        {% if inv.variable_symbol %}
+        <div class="text-right text-sm text-gray-500">
+          <div>Variabilní symbol</div>
+          <div class="font-semibold text-gray-700">{{ inv.variable_symbol }}</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="grid grid-cols-2 gap-6 mb-8 text-sm">
+        <div>
+          <div class="text-gray-400 uppercase text-xs mb-1">Dodavatel</div>
+          <div class="font-semibold text-gray-800">{{ supplier.name }}</div>
+          <div class="text-gray-600 whitespace-pre-line">{{ supplier.address }}</div>
+          {% if supplier.ic %}<div class="text-gray-600">IČ: {{ supplier.ic }}</div>{% endif %}
+          {% if supplier.dic %}<div class="text-gray-600">DIČ: {{ supplier.dic }}</div>{% endif %}
+          <div class="text-gray-600 mt-1">{{ supplier.vat_note }}</div>
+        </div>
+        <div>
+          <div class="text-gray-400 uppercase text-xs mb-1">Odběratel</div>
+          <div class="font-semibold text-gray-800">{{ customer.name }}</div>
+          <div class="text-gray-600 whitespace-pre-line">{{ customer.address }}</div>
+          {% if customer.ic %}<div class="text-gray-600">IČ: {{ customer.ic }}</div>{% endif %}
+          {% if customer.dic %}<div class="text-gray-600">DIČ: {{ customer.dic }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4 mb-8 text-sm">
+        <div>
+          <div class="text-gray-400 uppercase text-xs">Datum vystavení</div>
+          <div class="text-gray-800">{{ inv.issue_date }}</div>
+        </div>
+        <div>
+          <div class="text-gray-400 uppercase text-xs">Datum splatnosti</div>
+          <div class="text-gray-800">{{ inv.due_date }}</div>
+        </div>
+        {% if inv.delivery_date %}
+        <div>
+          <div class="text-gray-400 uppercase text-xs">Datum uskutečnění plnění</div>
+          <div class="text-gray-800">{{ inv.delivery_date }}</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <table class="w-full text-sm mb-6 border-collapse">
+        <thead>
+          <tr class="border-b-2 border-gray-800">
+            <th class="text-left py-2 pr-2 font-semibold text-gray-700">Popis</th>
+            <th class="text-right py-2 px-2 font-semibold text-gray-700">Množství</th>
+            <th class="text-right py-2 px-2 font-semibold text-gray-700">Cena/jedn.</th>
+            <th class="text-right py-2 pl-2 font-semibold text-gray-700">Celkem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for it in items %}
+          <tr class="border-b border-gray-200">
+            <td class="py-1.5 pr-2 text-gray-800">{{ it.description }}</td>
+            <td class="py-1.5 px-2 text-right text-gray-600 whitespace-nowrap">{{ it.quantity }} {{ it.unit }}</td>
+            <td class="py-1.5 px-2 text-right text-gray-600 whitespace-nowrap">{{ it.unit_price|czk }} Kč</td>
+            <td class="py-1.5 pl-2 text-right text-gray-800 whitespace-nowrap">{{ it.total|czk }} Kč</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="border-t-2 border-gray-800 font-semibold">
+            <td colspan="3" class="py-2 pr-2 text-right text-gray-700">Celkem k úhradě:</td>
+            <td class="py-2 pl-2 text-right text-gray-900 whitespace-nowrap">{{ total|czk }} Kč</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      {% if inv.note %}
+      <div class="mb-6 text-sm text-gray-600 whitespace-pre-line">{{ inv.note }}</div>
+      {% endif %}
+
+      <div class="flex items-start justify-between border-t border-gray-200 pt-6 gap-6">
+        <div class="text-sm text-gray-600">
+          <div>Způsob platby: {{ inv.payment_method }}</div>
+          {% if supplier.bank_account %}<div>Číslo účtu: {{ supplier.bank_account }}</div>{% endif %}
+          {% if supplier.iban %}<div>IBAN: {{ supplier.iban }}</div>{% endif %}
+          {% if inv.variable_symbol %}<div>Variabilní symbol: {{ inv.variable_symbol }}</div>{% endif %}
+        </div>
+        {% if qr_uri %}
+        <div class="text-center">
+          <img src="{{ qr_uri }}" alt="QR platba" class="w-32 h-32">
+          <div class="text-xs text-gray-400 mt-1">QR platba</div>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

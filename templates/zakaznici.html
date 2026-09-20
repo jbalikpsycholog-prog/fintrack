@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Zákazníci – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-800">Zákazníci</h1>
+    <p class="text-slate-500 text-sm">Uložení zákazníci pro rychlé vystavování faktur.</p>
+  </div>
+  <a href="/faktury" class="text-sm text-indigo-600 hover:text-indigo-800">← Zpět na Faktury</a>
+</div>
+
+{% if msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-5 text-sm">{{ msg }}</div>
+{% endif %}
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+    <h2 class="font-semibold text-slate-700 mb-4">Přidat zákazníka</h2>
+    <form method="post" action="/zakaznici/add" class="space-y-3">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Jméno / název firmy</label>
+        <input type="text" name="name" required class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Adresa</label>
+        <textarea name="address" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">IČ</label>
+          <input type="text" name="ic" class="w-full border rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">DIČ</label>
+          <input type="text" name="dic" class="w-full border rounded-lg px-3 py-2 text-sm">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">E-mail</label>
+          <input type="email" name="email" class="w-full border rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Telefon</label>
+          <input type="text" name="phone" class="w-full border rounded-lg px-3 py-2 text-sm">
+        </div>
+      </div>
+      <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Přidat zákazníka</button>
+    </form>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-100">
+      <h2 class="font-semibold text-slate-700">Uložení zákazníci</h2>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-100">
+        <tr>
+          <th class="text-left px-4 py-3 text-slate-600 font-medium">Jméno / firma</th>
+          <th class="text-left px-4 py-3 text-slate-600 font-medium">IČ</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in customers %}
+        <tr class="border-b border-slate-50 hover:bg-slate-50">
+          <td class="px-4 py-3 font-medium text-slate-800">
+            {{ c.name }}
+            {% if c.email %}<div class="text-xs text-slate-400">{{ c.email }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-slate-600">{{ c.ic or "—" }}</td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">
+            <a href="/zakaznici/{{ c.id }}/edit" class="text-xs text-indigo-500 hover:text-indigo-700 mr-3">Upravit</a>
+            <form method="post" action="/zakaznici/{{ c.id }}/delete" class="inline" onsubmit="return confirm('Deaktivovat zákazníka {{ c.name }}? Existující faktury zůstanou zachovány.');">
+              <button type="submit" class="text-xs text-red-500 hover:text-red-700">Deaktivovat</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="px-4 py-8 text-center text-slate-400">Zatím žádní zákazníci.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

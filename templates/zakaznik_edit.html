@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Upravit zákazníka – FinTrack{% endblock %}
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-2xl font-bold text-slate-800">Upravit zákazníka</h1>
+  <a href="/zakaznici" class="text-sm text-indigo-600 hover:text-indigo-800">← Zpět na zákazníky</a>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5 max-w-lg">
+  <form method="post" action="/zakaznici/{{ c.id }}/edit" class="space-y-3">
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Jméno / název firmy</label>
+      <input type="text" name="name" required value="{{ c.name }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-sm text-slate-600 mb-1">Adresa</label>
+      <textarea name="address" rows="2" class="w-full border rounded-lg px-3 py-2 text-sm">{{ c.address }}</textarea>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">IČ</label>
+        <input type="text" name="ic" value="{{ c.ic }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">DIČ</label>
+        <input type="text" name="dic" value="{{ c.dic }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">E-mail</label>
+        <input type="email" name="email" value="{{ c.email }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm text-slate-600 mb-1">Telefon</label>
+        <input type="text" name="phone" value="{{ c.phone }}" class="w-full border rounded-lg px-3 py-2 text-sm">
+      </div>
+    </div>
+    <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Uložit změny</button>
+  </form>
+</div>
+{% endblock %}
