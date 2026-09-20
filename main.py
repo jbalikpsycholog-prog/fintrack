@@ -88,6 +88,23 @@ def format_czk(value) -> str:
 jinja_env.filters["czk"] = format_czk
 
 
+def format_cz_date(value) -> str:
+    """Prevede datum ulozene interne jako 'RRRR-MM-DD' (ISO - kvuli razeni a
+    porovnavani, napr. u kontroly po splatnosti) na v CR bezny format
+    'DD.MM.RRRR' - jen pro zobrazeni, interni ulozeni/porovnavani se timto
+    nemeni."""
+    if not value:
+        return value
+    try:
+        d = datetime.strptime(value, "%Y-%m-%d")
+        return d.strftime("%d.%m.%Y")
+    except (ValueError, TypeError):
+        return value
+
+
+jinja_env.filters["czdate"] = format_cz_date
+
+
 # (nazev, typ "expense"/"income", vychozi danova relevance)
 DEFAULT_CATEGORIES = [
     ("SOFTWARE", "expense", True),
