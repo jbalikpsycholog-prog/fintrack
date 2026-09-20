@@ -9,9 +9,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from database import engine, SessionLocal, Base, Category, Transaction, ClassificationRule, Budget, ImportBatch, OpeningBalance
+from database import (
+    engine, SessionLocal, Base, Category, Transaction, ClassificationRule, Budget, ImportBatch,
+    OpeningBalance, Customer, Invoice, InvoiceItem, InvoiceSettings,
+)
 from parser_cs import parse_cs_csv
 from doklady_utils import scan_month_documents, file_uri_to_path
+from faktury_utils import (
+    generate_invoice_number, variable_symbol_from_invoice_number, get_or_create_settings,
+    qr_payment_data_uri, add_days_to_date, invoice_total,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -440,6 +447,16 @@ async def delete_transaction(t_id: int, next: str = Form("/transactions")):
     try:
         t = db.query(Transaction).filter(Transaction.id == t_id).first()
         if t:
+            # Pojistka: kdyz se prime smaze transakce vytvorena oznacenim
+            # faktury jako "Zaplaceno" (napr. bezne pres Transakce, misto
+            # tlacitka "Zrušit zaplacení" na fakture), musime na navazane
+            # fakture zrusit odkaz a vratit ji do stavu "vystavena" - jinak
+            # by zustala oznacena jako zaplacena bez existujici platby.
+            linked_inv = db.query(Invoice).filter(Invoice.linked_transaction_id == t.id).first()
+            if linked_inv:
+                linked_inv.status = "vystavena"
+                linked_inv.paid_date = None
+                linked_inv.linked_transaction_id = None
             db.delete(t)
             db.commit()
         safe_next = next if next.startswith("/") else "/transactions"
@@ -1118,5 +1135,417 @@ async def reports_page(
         # oba zustaly vzdy sesynchronizovane.
         response.set_cookie("selected_year", str(year), max_age=60 * 60 * 24 * 365 * 5)
         return response
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Zakaznici (modul Faktury, zari 2026)
+# ---------------------------------------------------------------------------
+
+def _customer_ctx(c: Customer) -> dict:
+    return {
+        "id": c.id, "name": c.name, "address": c.address or "",
+        "ic": c.ic or "", "dic": c.dic or "", "email": c.email or "", "phone": c.phone or "",
+    }
+
+
+@app.get("/zakaznici", response_class=HTMLResponse)
+async def customers_page(request: Request):
+    db = SessionLocal()
+    try:
+        custs = db.query(Customer).filter(Customer.is_active == True).order_by(Customer.name).all()
+        cust_list = [_customer_ctx(c) for c in custs]
+        return render("zakaznici.html", request=request, customers=cust_list, msg=None)
+    finally:
+        db.close()
+
+
+@app.post("/zakaznici/add")
+async def add_customer(name: str = Form(...), address: str = Form(""), ic: str = Form(""),
+                        dic: str = Form(""), email: str = Form(""), phone: str = Form("")):
+    db = SessionLocal()
+    try:
+        name = name.strip()
+        if name:
+            db.add(Customer(
+                name=name, address=address.strip() or None, ic=ic.strip() or None,
+                dic=dic.strip() or None, email=email.strip() or None, phone=phone.strip() or None,
+                is_active=True,
+            ))
+            db.commit()
+        return RedirectResponse(url="/zakaznici", status_code=303)
+    finally:
+        db.close()
+
+
+@app.get("/zakaznici/{c_id}/edit", response_class=HTMLResponse)
+async def edit_customer_page(request: Request, c_id: int):
+    db = SessionLocal()
+    try:
+        c = db.query(Customer).filter(Customer.id == c_id).first()
+        if not c:
+            return RedirectResponse(url="/zakaznici", status_code=303)
+        return render("zakaznik_edit.html", request=request, c=_customer_ctx(c))
+    finally:
+        db.close()
+
+
+@app.post("/zakaznici/{c_id}/edit")
+async def update_customer(c_id: int, name: str = Form(...), address: str = Form(""), ic: str = Form(""),
+                           dic: str = Form(""), email: str = Form(""), phone: str = Form("")):
+    db = SessionLocal()
+    try:
+        c = db.query(Customer).filter(Customer.id == c_id).first()
+        if c:
+            c.name = name.strip()
+            c.address = address.strip() or None
+            c.ic = ic.strip() or None
+            c.dic = dic.strip() or None
+            c.email = email.strip() or None
+            c.phone = phone.strip() or None
+            db.commit()
+        return RedirectResponse(url="/zakaznici", status_code=303)
+    finally:
+        db.close()
+
+
+@app.post("/zakaznici/{c_id}/delete")
+async def delete_customer(c_id: int):
+    db = SessionLocal()
+    try:
+        c = db.query(Customer).filter(Customer.id == c_id).first()
+        if c:
+            c.is_active = False
+            db.commit()
+        return RedirectResponse(url="/zakaznici", status_code=303)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Nastaveni faktur - udaje dodavatele pro hlavicku a QR platbu
+# ---------------------------------------------------------------------------
+
+@app.get("/faktury/nastaveni", response_class=HTMLResponse)
+async def invoice_settings_page(request: Request, msg: Optional[str] = None):
+    db = SessionLocal()
+    try:
+        s = get_or_create_settings(db, InvoiceSettings)
+        settings_ctx = {
+            "supplier_name": s.supplier_name or "", "supplier_address": s.supplier_address or "",
+            "supplier_ic": s.supplier_ic or "", "supplier_dic": s.supplier_dic or "",
+            "bank_account": s.bank_account or "", "iban": s.iban or "",
+            "vat_note": s.vat_note or "", "due_days_default": s.due_days_default or 14,
+        }
+        return render("faktury_nastaveni.html", request=request, s=settings_ctx,
+                      msg="Nastavení bylo uloženo." if msg else None)
+    finally:
+        db.close()
+
+
+@app.post("/faktury/nastaveni")
+async def update_invoice_settings(
+    supplier_name: str = Form(...), supplier_address: str = Form(""), supplier_ic: str = Form(""),
+    supplier_dic: str = Form(""), bank_account: str = Form(""), iban: str = Form(""),
+    vat_note: str = Form(""), due_days_default: int = Form(14),
+):
+    db = SessionLocal()
+    try:
+        s = get_or_create_settings(db, InvoiceSettings)
+        s.supplier_name = supplier_name.strip()
+        s.supplier_address = supplier_address.strip()
+        s.supplier_ic = supplier_ic.strip()
+        s.supplier_dic = supplier_dic.strip() or None
+        s.bank_account = bank_account.strip()
+        s.iban = iban.strip().replace(" ", "")
+        s.vat_note = vat_note.strip()
+        s.due_days_default = due_days_default
+        db.commit()
+        return RedirectResponse(url="/faktury/nastaveni?msg=1", status_code=303)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Faktury - vypis, vystaveni, tisk/detail, oznaceni zaplaceni
+# ---------------------------------------------------------------------------
+
+INVOICE_STATUS_LABELS = {"vystavena": "Vystavená", "zaplacena": "Zaplacená", "stornovana": "Stornovaná"}
+
+
+def _parse_invoice_items_form(form):
+    """Vytahne radky polozek z formulare (opakovana pole item_description[]
+    apod.) - spolecne pro vytvoreni i upravu faktury."""
+    descriptions = form.getlist("item_description[]")
+    quantities = form.getlist("item_quantity[]")
+    units = form.getlist("item_unit[]")
+    unit_prices = form.getlist("item_unit_price[]")
+    items = []
+    for desc, qty, unit, price in zip(descriptions, quantities, units, unit_prices):
+        desc = (desc or "").strip()
+        if not desc:
+            continue
+        try:
+            qty_val = float(qty) if qty else 1.0
+        except ValueError:
+            qty_val = 1.0
+        try:
+            price_val = float(price) if price else 0.0
+        except ValueError:
+            price_val = 0.0
+        items.append({"description": desc, "quantity": qty_val,
+                      "unit": (unit or "ks").strip() or "ks", "unit_price": price_val})
+    return items
+
+
+@app.get("/faktury", response_class=HTMLResponse)
+async def invoices_page(request: Request, status: Optional[str] = None, msg: Optional[str] = None):
+    db = SessionLocal()
+    try:
+        sel_year = get_selected_year(request)
+        q = db.query(Invoice).filter(Invoice.issue_date.like(f"{sel_year}-%"))
+        if status:
+            q = q.filter(Invoice.status == status)
+        invoices = q.order_by(Invoice.issue_date.desc(), Invoice.id.desc()).all()
+        today = datetime.now().strftime("%Y-%m-%d")
+        inv_list = []
+        total_unpaid = 0.0
+        for inv in invoices:
+            total = invoice_total(inv)
+            is_overdue = inv.status == "vystavena" and bool(inv.due_date) and inv.due_date < today
+            if inv.status == "vystavena":
+                total_unpaid += total
+            inv_list.append({
+                "id": inv.id, "invoice_number": inv.invoice_number,
+                "customer_name": inv.customer.name if inv.customer else "?",
+                "issue_date": inv.issue_date, "due_date": inv.due_date,
+                "status": inv.status, "status_label": INVOICE_STATUS_LABELS.get(inv.status, inv.status),
+                "is_overdue": is_overdue, "total": total,
+            })
+        return render("faktury.html", request=request, invoices=inv_list,
+                      selected_status=status or "", total_unpaid=total_unpaid, msg=msg)
+    finally:
+        db.close()
+
+
+@app.get("/faktury/nova", response_class=HTMLResponse)
+async def new_invoice_page(request: Request):
+    db = SessionLocal()
+    try:
+        custs = db.query(Customer).filter(Customer.is_active == True).order_by(Customer.name).all()
+        cust_list = [{"id": c.id, "name": c.name} for c in custs]
+        s = get_or_create_settings(db, InvoiceSettings)
+        today = datetime.now().strftime("%Y-%m-%d")
+        default_due = add_days_to_date(today, s.due_days_default or 14)
+        return render("faktura_form.html", request=request, mode="new",
+                      customers=cust_list, inv=None,
+                      form_action="/faktury/nova", today=today, default_due=default_due,
+                      page_title="Nová faktura")
+    finally:
+        db.close()
+
+
+@app.post("/faktury/nova")
+async def create_invoice(request: Request):
+    db = SessionLocal()
+    try:
+        form = await request.form()
+        customer_id = form.get("customer_id")
+        if not customer_id:
+            return RedirectResponse(url="/faktury/nova", status_code=303)
+        issue_date = form.get("issue_date") or datetime.now().strftime("%Y-%m-%d")
+        due_date = form.get("due_date") or issue_date
+        delivery_date = form.get("delivery_date") or None
+        payment_method = form.get("payment_method") or "převodem"
+        note = form.get("note") or None
+
+        inv_number = generate_invoice_number(db, Invoice, issue_date)
+        vs = variable_symbol_from_invoice_number(inv_number)
+
+        inv = Invoice(
+            invoice_number=inv_number, variable_symbol=vs,
+            customer_id=int(customer_id), issue_date=issue_date, due_date=due_date,
+            delivery_date=delivery_date, payment_method=payment_method, note=note,
+            status="vystavena",
+        )
+        db.add(inv)
+        db.flush()
+
+        for sort_order, item in enumerate(_parse_invoice_items_form(form)):
+            db.add(InvoiceItem(invoice_id=inv.id, sort_order=sort_order, **item))
+        db.commit()
+        return RedirectResponse(url=f"/faktury/{inv.id}", status_code=303)
+    finally:
+        db.close()
+
+
+@app.get("/faktury/{inv_id}/edit", response_class=HTMLResponse)
+async def edit_invoice_page(request: Request, inv_id: int):
+    db = SessionLocal()
+    try:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+        if not inv or inv.status != "vystavena":
+            return RedirectResponse(url=f"/faktury/{inv_id}", status_code=303)
+        custs = db.query(Customer).filter(Customer.is_active == True).order_by(Customer.name).all()
+        cust_list = [{"id": c.id, "name": c.name} for c in custs]
+        item_rows = [{"description": it.description, "quantity": it.quantity, "unit": it.unit,
+                      "unit_price": it.unit_price} for it in inv.items]
+        inv_ctx = {
+            "id": inv.id, "customer_id": inv.customer_id, "issue_date": inv.issue_date,
+            "due_date": inv.due_date, "delivery_date": inv.delivery_date or "",
+            "payment_method": inv.payment_method or "převodem", "note": inv.note or "",
+            # POZOR: klic se nesmi jmenovat "items" - dict ma vestavenou metodu
+            # .items(), takze "inv.items" v Jinja by vratilo tuto metodu misto
+            # naseho seznamu (getattr uspeje driv, nez se zkusi inv["items"]).
+            "item_rows": item_rows,
+        }
+        return render("faktura_form.html", request=request, mode="edit",
+                      customers=cust_list, inv=inv_ctx,
+                      form_action=f"/faktury/{inv.id}/edit", today=inv.issue_date,
+                      default_due=inv.due_date, page_title=f"Upravit fakturu {inv.invoice_number}")
+    finally:
+        db.close()
+
+
+@app.post("/faktury/{inv_id}/edit")
+async def update_invoice(request: Request, inv_id: int):
+    db = SessionLocal()
+    try:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+        if not inv or inv.status != "vystavena":
+            return RedirectResponse(url=f"/faktury/{inv_id}", status_code=303)
+        form = await request.form()
+        customer_id = form.get("customer_id")
+        if customer_id:
+            inv.customer_id = int(customer_id)
+        inv.issue_date = form.get("issue_date") or inv.issue_date
+        inv.due_date = form.get("due_date") or inv.due_date
+        inv.delivery_date = form.get("delivery_date") or None
+        inv.payment_method = form.get("payment_method") or "převodem"
+        inv.note = form.get("note") or None
+
+        # Prekreslime polozky od znova - jednodussi a spolehlivejsi nez
+        # slozite parovat existujici radky se zmenenym poctem/poradim.
+        db.query(InvoiceItem).filter(InvoiceItem.invoice_id == inv.id).delete()
+        for sort_order, item in enumerate(_parse_invoice_items_form(form)):
+            db.add(InvoiceItem(invoice_id=inv.id, sort_order=sort_order, **item))
+        db.commit()
+        return RedirectResponse(url=f"/faktury/{inv.id}", status_code=303)
+    finally:
+        db.close()
+
+
+@app.get("/faktury/{inv_id}", response_class=HTMLResponse)
+async def invoice_detail(inv_id: int):
+    db = SessionLocal()
+    try:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+        if not inv:
+            return RedirectResponse(url="/faktury", status_code=303)
+        s = get_or_create_settings(db, InvoiceSettings)
+        items = [{"description": it.description, "quantity": it.quantity, "unit": it.unit,
+                  "unit_price": it.unit_price, "total": (it.quantity or 0) * (it.unit_price or 0)}
+                 for it in inv.items]
+        total = sum(i["total"] for i in items)
+        qr_uri = qr_payment_data_uri(s.iban, total, inv.variable_symbol, f"Faktura {inv.invoice_number}")
+        today = datetime.now().strftime("%Y-%m-%d")
+        inv_ctx = {
+            "id": inv.id, "invoice_number": inv.invoice_number,
+            "variable_symbol": inv.variable_symbol or "",
+            "issue_date": inv.issue_date, "due_date": inv.due_date,
+            "delivery_date": inv.delivery_date or "",
+            "payment_method": inv.payment_method or "převodem",
+            "note": inv.note or "", "status": inv.status,
+            "status_label": INVOICE_STATUS_LABELS.get(inv.status, inv.status),
+            "paid_date": inv.paid_date or "",
+            "is_overdue": inv.status == "vystavena" and bool(inv.due_date) and inv.due_date < today,
+        }
+        customer_ctx = {
+            "name": inv.customer.name if inv.customer else "",
+            "address": inv.customer.address if inv.customer else "",
+            "ic": inv.customer.ic if inv.customer else "",
+            "dic": inv.customer.dic if inv.customer else "",
+        }
+        supplier_ctx = {
+            "name": s.supplier_name, "address": s.supplier_address,
+            "ic": s.supplier_ic, "dic": s.supplier_dic,
+            "bank_account": s.bank_account, "iban": s.iban, "vat_note": s.vat_note,
+        }
+        return render("faktura_detail.html", inv=inv_ctx, customer=customer_ctx,
+                      supplier=supplier_ctx, items=items, total=total, qr_uri=qr_uri,
+                      today=today)
+    finally:
+        db.close()
+
+
+@app.post("/faktury/{inv_id}/paid")
+async def mark_invoice_paid(inv_id: int, paid_date: str = Form(...)):
+    db = SessionLocal()
+    try:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+        if not inv or inv.status == "zaplacena":
+            return RedirectResponse(url=f"/faktury/{inv_id}", status_code=303)
+        total = invoice_total(inv)
+        try:
+            d = datetime.strptime(paid_date, "%Y-%m-%d")
+            py, pm = d.year, d.month
+        except Exception:
+            now = datetime.now()
+            paid_date = now.strftime("%Y-%m-%d")
+            py, pm = now.year, now.month
+        # Prijem z faktury se zaznamena jako bezna "cash" transakce (rucni
+        # zaznam) - viz rozhodnuti s uzivatelem: takto zustava plne editovatelna
+        # (kategorie, danova relevance) v Transakcich, a "Zrušit zaplacení" na
+        # fakture ji spolehlive smaze podle linked_transaction_id, ne podle
+        # hadani castky/data.
+        t = Transaction(
+            date=paid_date, year=py, month=pm,
+            amount=abs(total), currency="CZK", is_income=True,
+            source_type="cash", tax_relevant=True,
+            counterparty_name=inv.customer.name if inv.customer else "",
+            description=f"Faktura {inv.invoice_number}",
+            variable_symbol=inv.variable_symbol,
+        )
+        db.add(t)
+        db.flush()
+        inv.status = "zaplacena"
+        inv.paid_date = paid_date
+        inv.linked_transaction_id = t.id
+        db.commit()
+        return RedirectResponse(url=f"/faktury/{inv_id}", status_code=303)
+    finally:
+        db.close()
+
+
+@app.post("/faktury/{inv_id}/unpaid")
+async def unmark_invoice_paid(inv_id: int):
+    db = SessionLocal()
+    try:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+        if not inv:
+            return RedirectResponse(url="/faktury", status_code=303)
+        if inv.linked_transaction_id:
+            t = db.query(Transaction).filter(Transaction.id == inv.linked_transaction_id).first()
+            if t:
+                db.delete(t)
+        inv.status = "vystavena"
+        inv.paid_date = None
+        inv.linked_transaction_id = None
+        db.commit()
+        return RedirectResponse(url=f"/faktury/{inv_id}", status_code=303)
+    finally:
+        db.close()
+
+
+@app.post("/faktury/{inv_id}/delete")
+async def delete_invoice(inv_id: int):
+    db = SessionLocal()
+    try:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id).first()
+        if inv and inv.status != "zaplacena":
+            db.delete(inv)
+            db.commit()
+        return RedirectResponse(url="/faktury", status_code=303)
     finally:
         db.close()

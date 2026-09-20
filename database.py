@@ -164,6 +164,88 @@ class OpeningBalance(Base):
     amount = Column(Float, default=0.0)
 
 
+class Customer(Base):
+    """Ulozeny zakaznik pro opakovane pouziti na fakturach (zari 2026)."""
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    address = Column(Text, nullable=True)
+    ic = Column(String, nullable=True)
+    dic = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+
+    invoices = relationship("Invoice", back_populates="customer")
+
+
+class Invoice(Base):
+    """Vydana faktura (modul Faktury, zari 2026). Cislo faktury se generuje
+    ve formatu MM+RRRR (napr. "092026" pro zari 2026), pripadne s -2/-3
+    priponou pri kolizi vice faktur ve stejnem mesici."""
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_number = Column(String, nullable=False, unique=True, index=True)
+    variable_symbol = Column(String, nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+
+    issue_date = Column(String, nullable=False)
+    due_date = Column(String, nullable=False)
+    delivery_date = Column(String, nullable=True)
+
+    payment_method = Column(String, default="převodem")
+    note = Column(Text, nullable=True)
+
+    # "vystavena" / "zaplacena" / "stornovana"
+    status = Column(String, default="vystavena")
+    paid_date = Column(String, nullable=True)
+
+    # Odkaz na transakci automaticky vytvorenou pri oznaceni "Zaplaceno" (viz
+    # /faktury/{id}/paid) - umoznuje "Zrusit zaplaceni" spolehlive smazat jen
+    # tuto jednu navazanou transakci, ne hadat podle castky/data.
+    linked_transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now)
+
+    customer = relationship("Customer", back_populates="invoices")
+    items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan",
+                          order_by="InvoiceItem.sort_order")
+    linked_transaction = relationship("Transaction")
+
+
+class InvoiceItem(Base):
+    """Jedna polozka (radek) faktury."""
+    __tablename__ = "invoice_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
+    description = Column(String, nullable=False)
+    quantity = Column(Float, default=1.0)
+    unit = Column(String, default="ks")
+    unit_price = Column(Float, default=0.0)
+    sort_order = Column(Integer, default=0)
+
+    invoice = relationship("Invoice", back_populates="items")
+
+
+class InvoiceSettings(Base):
+    """Jeden radek s udaji dodavatele pro hlavicku faktur a QR platbu -
+    nastavuje se na strance /faktury/nastaveni."""
+    __tablename__ = "invoice_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_name = Column(String, default="")
+    supplier_address = Column(Text, default="")
+    supplier_ic = Column(String, default="")
+    supplier_dic = Column(String, nullable=True)
+    bank_account = Column(String, default="")
+    iban = Column(String, default="")
+    vat_note = Column(String, default="Nejsem plátce DPH.")
+    due_days_default = Column(Integer, default=14)
+
+
 # Sloupce, ktere pribyly po prvnim vydani aplikace. Pri kazdem startu se
 # zkontroluje, jestli v databazi chybi, a pokud ano, doplni se (ALTER TABLE),
 # aniz by se smazala existujici data.
