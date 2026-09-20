@@ -48,16 +48,22 @@ def variable_symbol_from_invoice_number(invoice_number):
 
 def get_or_create_settings(db, InvoiceSettings):
     """Vrati jediny radek s udaji dodavatele pro hlavicku faktur - pri prvnim
-    pouziti ho zalozi, predvyplneny jiz potvrzenymi udaji (zari 2026)."""
+    pouziti ho zalozi. POZOR: zaznamne udaje se sem NESMI natvrdo zapisovat
+    (napr. konkretni cislo uctu/IBAN) - tenhle soubor je soucasti kodu v
+    GitHub repozitari, ktery muze skoncit i u nekoho jineho (sdileni kopie
+    appky), a natvrdo zapsane udaje by se tak prenesly i tam. Zaznam se proto
+    zaklada prazdny/obecny - konkretni udaje dodavatele se vyplni jen rucne
+    na strance /faktury/nastaveni, tam zustanou jen v jeho vlastni lokalni
+    databazi (fintrack.db), ktera se s kodem NESDILI."""
     row = db.query(InvoiceSettings).first()
     if not row:
         row = InvoiceSettings(
-            supplier_name="Mgr. et Mgr. Petra Balíková",
-            supplier_address="Pazderky 3776/5\n669 02 Znojmo",
-            supplier_ic="04351339",
+            supplier_name="",
+            supplier_address="",
+            supplier_ic="",
             supplier_dic=None,
-            bank_account="4164826309/0800",
-            iban="CZ6808000000004164826309",
+            bank_account="",
+            iban="",
             vat_note="Nejsem plátce DPH.",
             due_days_default=14,
         )
