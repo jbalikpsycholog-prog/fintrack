@@ -45,8 +45,8 @@
       <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="window.location='/faktury/{{ inv.id }}'">
         <td class="px-4 py-3 font-medium text-slate-800">{{ inv.invoice_number }}</td>
         <td class="px-4 py-3 text-slate-700">{{ inv.customer_name }}</td>
-        <td class="px-4 py-3 text-slate-600">{{ inv.issue_date }}</td>
-        <td class="px-4 py-3 text-slate-600">{{ inv.due_date }}</td>
+        <td class="px-4 py-3 text-slate-600">{{ inv.issue_date|czdate }}</td>
+        <td class="px-4 py-3 text-slate-600">{{ inv.due_date|czdate }}</td>
         <td class="px-4 py-3">
           {% if inv.status == 'zaplacena' %}
           <span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">Zaplacená</span>

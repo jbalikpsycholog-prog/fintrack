@@ -27,7 +27,7 @@
         <button type="submit" class="text-sm text-red-500 hover:text-red-700 px-2">Smazat</button>
       </form>
       {% elif inv.status == 'zaplacena' %}
-      <span class="text-sm text-green-700">Zaplaceno {{ inv.paid_date }}</span>
+      <span class="text-sm text-green-700">Zaplaceno {{ inv.paid_date|czdate }}</span>
       <form method="post" action="/faktury/{{ inv.id }}/unpaid" onsubmit="return confirm('Zrušit zaplacení faktury {{ inv.invoice_number }}? Navázaná transakce v Penězích/Transakcích bude smazána.');">
         <button type="submit" class="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">Zrušit zaplacení</button>
       </form>
@@ -79,16 +79,16 @@
       <div class="grid grid-cols-3 gap-4 mb-8 text-sm">
         <div>
           <div class="text-gray-400 uppercase text-xs">Datum vystavení</div>
-          <div class="text-gray-800">{{ inv.issue_date }}</div>
+          <div class="text-gray-800">{{ inv.issue_date|czdate }}</div>
         </div>
         <div>
           <div class="text-gray-400 uppercase text-xs">Datum splatnosti</div>
-          <div class="text-gray-800">{{ inv.due_date }}</div>
+          <div class="text-gray-800">{{ inv.due_date|czdate }}</div>
         </div>
         {% if inv.delivery_date %}
         <div>
           <div class="text-gray-400 uppercase text-xs">Datum uskutečnění plnění</div>
-          <div class="text-gray-800">{{ inv.delivery_date }}</div>
+          <div class="text-gray-800">{{ inv.delivery_date|czdate }}</div>
         </div>
         {% endif %}
       </div>
